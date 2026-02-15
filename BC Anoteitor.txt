@@ -1,0 +1,90 @@
+## 📄 Documentação Técnica do Projeto **AnotEitor**
+
+- `Main.cs` → lógica principal da UI, persistência, navegação e algoritmos
+- `INI.cs` → gerenciamento de configurações via arquivo .ini com interop Win32
+- `Funcoes.cs` → funções auxiliares de renomeação, caminho, tempo e identificação de projetos
+- `Helper.cs` → algoritmos de busca (`GetIndexes`) e extração de data (`ExtractDateFromFileName`)
+
+
+### 1. Visão Geral  
+O **AnotEitor** é um programa de anotações locais baseado em arquivos de texto (.txt), com suporte a organização hierárquica por **projetos** e **subatividades**, salvamento automático, medição de tempo gasto e busca avançada (incluindo busca global recursiva). Todo o estado e configuração são armazenados localmente, sem dependência de banco de dados externo.
+
+---
+
+### 2. Tecnologias Utilizadas
+
+#### 🔧 BackEnd
+- **Linguagem**: C# (.NET Framework)
+- **Persistência**:
+  - Arquivos de texto (.txt) com detecção automática de codificação (ASCII/UTF-8/BOM)
+  - Arquivo de configuração `.ini` gerenciado via API Win32 (`kernel32.dll`)
+- **Concorrência**:
+  - `Task` + `CancellationTokenSource` para operações assíncronas (ex: busca global)
+- **Bibliotecas principais**:
+  - `System.IO` (manipulação de arquivos/diretórios)
+  - `System.Threading.Tasks` (execução assíncrona)
+  - `System.Text.RegularExpressions` (extração de datas)
+  - `System.Runtime.InteropServices` (interoperação com Windows)
+
+#### 🖥️ FrontEnd
+- **Framework**: Windows Forms (.NET Framework)
+- **Controles principais**:
+  - `RichTextBox` para edição de texto
+  - ComboBoxes dinâmicos para seleção de projetos, subatividades e datas
+  - StatusBar com indicadores de caracteres e tempo
+  - MenuStrip com funcionalidades completas (arquivo, edição, formato, impressão)
+- **Diálogos personalizados**:
+  - Find/Replace, GoTo Line, About, Configuração de Projetos, Header/Footer
+- **Impressão**:
+  - Suporte a margens, fontes personalizadas e formatação de cabeçalho/rodapé com macros (`&f`, `&p`, `&d`, `&t`)
+
+---
+
+### 3. Algoritmos Utilizados
+
+| Algoritmo | Descrição |
+|---------|----------|
+| **Busca incremental** | Implementado com `String.IndexOf`/`LastIndexOf`, com opções case-sensitive e direção (↑/↓) |
+| **Busca global recursiva** | Usa `Directory.GetFiles(..., SearchOption.AllDirectories)` + `Task.Run` + atualização progressiva da UI via `Invoke` |
+| **Extração de data do nome do arquivo** | Regex `\d{2}-\d{2}-\d{4}` aplicado a nomes como `Projeto^Sub^15-02-2026.txt` |
+| **Formatação de header/footer** | Parsing de strings com marcadores `&l`, `&c`, `&r` usando `Helper.GetIndexes()` para dividir em Left/Center/Right |
+| **Renomeação segura de pastas/arquivos** | `Directory.Move` + iteração sobre `FileInfo[]` com substituição de substrings no nome dos arquivos |
+| **Medição de tempo** | Contador de minutos baseado em `timer2_Tick`, persistido por projeto no `.ini` |
+| **Scroll automático** | `RichTextBox.ScrollToCaret()` após busca ou mudança de posição |
+
+---
+
+### 4. Estruturas de Dados
+
+| Estrutura | Uso |
+|---------|-----|
+| **`List<string>` / `List<DateTime>`** | Armazenamento de arquivos, datas, resultados de busca |
+| **`Dictionary` implícito via INI** | Seções como `[NmProjetos]`, `[Pro1]`, etc., simulam dicionários com chaves `Pro1`, `Sub2`, etc. |
+| **Classes auxiliares** |<ul><li>`ContentPosition` → linha/coluna do cursor</li><li>`HeaderOrFooterInfo` → estrutura de cabeçalho/rodapé</li><li>`cEscolhido` → controle de cópia de arquivos anteriores</li></ul> |
+| **`CancellationTokenSource`** | Controle de cancelamento de buscas longas |
+| **`Encoding`** | Detecção e preservação de codificação de arquivos |
+
+---
+
+### 5. Convenções de Nomeação e Arquitetura
+
+- **Nomes de arquivos**: `{Projeto}^{SubAtividade?}^{DD-MM-AAAA}.txt`
+- **Hierarquia de pastas**: `PastaGeral\{Projeto}\{SubAtividade?}\{Arquivo}.txt`
+- **Configuração centralizada**: Todas as preferências (fonte, salvamento automático, pasta raiz, etc.) ficam no `Anoteitor.ini`
+- **Estado da UI**: Projetos, subatividades e datas são carregados dinamicamente do sistema de arquivos + `.ini`
+
+---
+
+### 6. Fluxos Principais
+
+1. **Abertura do programa**  
+   → Lê `Anoteitor.ini` → carrega último projeto → abre arquivo do dia atual
+
+2. **Edição + Salvamento Automático**  
+   → Qualquer alteração marca `IsDirty = true` → `timer1` dispara salvamento após N segundos
+
+3. **Troca de Projeto/Subatividade**  
+   → Atualiza ComboBoxes → carrega novo arquivo → ajusta cor de fundo (cinza = arquivo antigo)
+
+4. **Busca Global**  
+   → Extrai termo selecionado → varre recursivamente todos os `.txt` → exibe resultados em janela flutuante com cancelamento

@@ -1,14 +1,14 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Drawing;
-using System.Drawing.Printing;
 using System.IO;
+using System.Data;
 using System.Linq;
 using System.Text;
+using System.Drawing;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Threading.Tasks;
+using System.Drawing.Printing;
+using System.Collections.Generic;
 
 namespace Anoteitor
 {
@@ -579,6 +579,21 @@ namespace Anoteitor
         private bool Save()
         {
             if (!IsDirty) return true;
+
+            string expectedFilename = this.NomeDoArquivo(Fun.Agora().ToShortDateString().Replace(@"/", "-"));
+            if (!string.IsNullOrEmpty(this.Filename) &&
+                !this.Filename.EndsWith(Path.GetFileName(expectedFilename)))
+            {
+                // Arquivo atual não corresponde ao contexto → não salvar!
+                MessageBox.Show("⚠️ Contexto inválido para salvamento. Salvando como cópia de segurança...",
+                                this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+                // Salvar como backup para não perder dados
+                string backupPath = Path.Combine(Path.GetDirectoryName(this.Filename),
+                                                "backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
+                File.WriteAllText(backupPath, Content);
+                return false;
+            }
 
             int Tam = Content.Length;
             if (Tam < 1)
@@ -1429,7 +1444,7 @@ namespace Anoteitor
 
         private void cbProjetos_DropDownClosed(object sender, EventArgs e)
         {
-            Console.WriteLine("cbProjetos_DropDownClosed");
+            this.SafeDisableTimer();
             this.Atual = cbProjetos.Text;
             cIni.WriteString("Projetos", "Atual", cbProjetos.Text);
             this.CarregaArquivoDoProjeto(true);
@@ -1766,31 +1781,61 @@ namespace Anoteitor
 
         private void cbSubprojeto_SelectedIndexChanged(object sender, EventArgs e)
         {
-            Console.WriteLine("cbSubprojeto_SelectedIndexChanged");
-            if (this.Carregado)
-                if (cbSubprojeto.Text != this.cbArquivosSUbOld)
+            if (!this.Carregado) return;
+
+            // Evita reentrada ou troca desnecessária
+            if (cbSubprojeto.Text == this.cbArquivosSUbOld) return;
+
+            // 🔒 1. Desabilita o timer para evitar salvamento em contexto errado
+            if (this.timer1.Enabled)
+            {
+                this.timer1.Enabled = false;
+                // ⚠️ Força salvamento imediato se houver alterações
+                if (this.IsDirty)
                 {
-                    string sData = Fun.Agora().ToShortDateString();
-                    string Data = sData.Replace(@"/", "-");
-                    this.SUbAtual = cbSubprojeto.Text;
-                    cIni.WriteString(this.Atual, "SubAtual", this.SUbAtual);
-                    this.Filename = NomeDoArquivo(Data);
-                    this.Open(this.Filename);
-                    this.cbArquivosSUbOld = this.SUbAtual;
-                    string PastaSubAtual = "";
-                    if (this.SUbAtual == "")
-                        renomearToolStripMenuItem.Enabled = false;
-                    else
-                    {
-                        PastaSubAtual = @"\" + this.SUbAtual;
-                        renomearToolStripMenuItem.Enabled = true;
-                    }
-                    apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
-                    string PastaSub = this.PastaGeral + @"\" + this.Atual + PastaSubAtual;
-                    if (cIni.ReadBool("Projetos", "CopiaOutroDia", false))
-                        this.HojeVazio = true;
-                    this.PreparaComboArquivo(PastaSub);
+                    this.Save();
                 }
+            }
+
+            // 📥 2. Salva o estado atual antes de mudar de subatividade
+            if (this.IsDirty)
+            {
+                this.Save(); // Garante que o conteúdo atual seja persistido no arquivo correto
+            }
+
+            // 🔄 3. Atualiza o contexto da nova subatividade
+            string sData = Fun.Agora().ToShortDateString();
+            string Data = sData.Replace(@"/", "-");
+            this.SUbAtual = cbSubprojeto.Text;
+            cIni.WriteString(this.Atual, "SubAtual", this.SUbAtual);
+
+            // 📁 4. Define o novo caminho do arquivo
+            this.Filename = NomeDoArquivo(Data);
+
+            // 📖 5. Carrega o novo arquivo
+            this.Open(this.Filename);
+
+            // 🧠 6. Atualiza estado de controle
+            this.cbArquivosSUbOld = this.SUbAtual;
+
+            // 🎨 7. Atualiza UI
+            if (string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL")
+            {
+                renomearToolStripMenuItem.Enabled = false;
+            }
+            else
+            {
+                renomearToolStripMenuItem.Enabled = true;
+            }
+            apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
+
+            // 🗂️ 8. Prepara combo de arquivos da nova subpasta
+            string PastaSub = Path.Combine(this.PastaGeral, this.Atual, this.SUbAtual == "GERAL" ? "" : this.SUbAtual);
+            if (cIni.ReadBool("Projetos", "CopiaOutroDia", false))
+            {
+                this.HojeVazio = true;
+            }
+            this.PreparaComboArquivo(PastaSub);
         }
 
         private void renomearToolStripMenuItem_Click(object sender, EventArgs e)
@@ -2080,6 +2125,16 @@ namespace Anoteitor
 
             DialogResult dialogResult = form.ShowDialog();
             return dialogResult == DialogResult.OK ? textBox.Text : "";
+        }
+
+        private void SafeDisableTimer()
+        {
+            if (this.timer1.Enabled)
+            {
+                this.timer1.Enabled = false;
+                // Forçar salvamento imediato se houver alterações
+                if (this.IsDirty) this.Save();
+            }
         }
 
     }
