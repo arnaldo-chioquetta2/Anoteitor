@@ -580,45 +580,92 @@ namespace Anoteitor
         {
             if (!IsDirty) return true;
 
-            string expectedFilename = this.NomeDoArquivo(Fun.Agora().ToShortDateString().Replace(@"/", "-"));
-            if (!string.IsNullOrEmpty(this.Filename) &&
-                !this.Filename.EndsWith(Path.GetFileName(expectedFilename)))
-            {
-                // Arquivo atual não corresponde ao contexto → não salvar!
-                MessageBox.Show("⚠️ Contexto inválido para salvamento. Salvando como cópia de segurança...",
-                                this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-
-                // Salvar como backup para não perder dados
-                string backupPath = Path.Combine(Path.GetDirectoryName(this.Filename),
-                                                "backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
-                File.WriteAllText(backupPath, Content);
-                return false;
-            }
-
             int Tam = Content.Length;
+
             if (Tam < 1)
             {
                 this.Loga("Ia salvar vazio");
-            } else
+            }
+            else
             {
                 toolStripStatusLabel1.Text = "Salvando arquivo";
+
                 string Atual = cIni.ReadString("Projetos", "Atual", "");
                 string SubAtiv = "";
+
                 if (cbSubprojeto.Visible)
                     if (cbSubprojeto.Text != "GERAL")
                         SubAtiv = @"\" + cbSubprojeto.Text;
+
                 string Pasta = this.PastaGeral + @"\" + Atual + SubAtiv;
+
                 if (Directory.Exists(Pasta) == false)
                     Directory.CreateDirectory(Pasta);
+
                 string[] Parts = Filename.Split('\\');
                 string Arq = Pasta + @"\" + Parts[Parts.Length - 1];
+
+                // 🔍 VALIDAÇÃO CRÍTICA: Verificar se Filename corresponde ao contexto atual
+                string expectedFilename = this.NomeDoArquivo(Fun.Agora().ToShortDateString().Replace(@"/", "-"));
+
+                if (!string.IsNullOrEmpty(this.Filename) &&
+                    !this.Filename.EndsWith(Path.GetFileName(expectedFilename)))
+                {
+                    // ⚠️ Contexto inválido detectado!
+                    string msgErro = "⚠️ ATENÇÃO: Contexto inválido para salvamento!\n\n" +
+                                    $"Arquivo atual: {Path.GetFileName(this.Filename)}\n" +
+                                    $"Esperado: {Path.GetFileName(expectedFilename)}\n\n" +
+                                    "O conteúdo será salvo como cópia de segurança para não perder dados.\n\n" +
+                                    "Deseja ver o log para investigar?";
+
+                    DialogResult resposta = MessageBox.Show(msgErro,
+                                                           this.TitAplicativo,
+                                                           MessageBoxButtons.YesNo,
+                                                           MessageBoxIcon.Warning);
+
+                    // 📋 Salvar como backup
+                    string backupPath = Path.Combine(Path.GetDirectoryName(this.Filename),
+                                                    "backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
+                    File.WriteAllText(backupPath, Content);
+
+                    this.Loga($"⚠️ ERRO: Contexto inválido. Salvando backup em: {backupPath}");
+                    this.Loga($"    Filename atual: {this.Filename}");
+                    this.Loga($"    Filename esperado: {expectedFilename}");
+                    this.Loga($"    Atual: {this.Atual}");
+                    this.Loga($"    SUbAtual: {this.SUbAtual}");
+                    this.Loga($"    Content.Length: {Content.Length}");
+
+                    // 👁️ Se usuário quiser ver o log, abrir com Bloco de Notas
+                    if (resposta == DialogResult.Yes && this.Logar)
+                    {
+                        try
+                        {
+                            System.Diagnostics.Process.Start("notepad.exe", this.NomeLog);
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show($"Erro ao abrir o log: {ex.Message}",
+                                           this.TitAplicativo,
+                                           MessageBoxButtons.OK,
+                                           MessageBoxIcon.Error);
+                        }
+                    }
+
+                    return false;
+                }
+
+                // ✅ Salvar normalmente
                 File.WriteAllText(Arq, Content);
                 IsDirty = false;
+
                 this.Loga("Arquivo " + Filename + " salvo " + Tam.ToString() + " bytes");
+
                 String HoraSalva = Fun.Agora().ToString(@"hh\:mm\:ss");
                 toolStripStatusLabel1.Text = "Gravado às : " + HoraSalva;
+
                 this.AjustaCorFundo();
             }
+
             return true;
         }
 
