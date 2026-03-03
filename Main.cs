@@ -589,123 +589,106 @@ namespace Anoteitor
             UpdateTitle();
         }
 
-        // Processamento INICIO
+// Save INICIO
+
         private bool Save()
         {
-            // Refatorado em 03/03/26 Original 75 linhas, resultado 16 linhas
+            // Refatorado em 03/03/26 Original 70 linhas, resultado 12 linhas
             if (!IsDirty) return true;
-            int Tam = Content.Length;
-            if (Tam < 1)
+
+            if (!ValidateContent()) return true;
+
+            toolStripStatusLabel1.Text = "Salvando arquivo";
+
+            string path = BuildFilePath();
+            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+
+            if (!ValidateFileContext(path)) return false;
+
+            SaveFile(path);
+            return true;
+        }
+
+        private bool ValidateContent()
+        {
+            int length = Content.Length;
+            if (length < 1)
             {
                 this.Loga("Ia salvar vazio");
-                return true;
+                return false;
             }
-            toolStripStatusLabel1.Text = "Salvando arquivo";
-            string Arq = GetTargetFilePath();
-            string dataHoje = Fun.Agora().ToShortDateString().Replace(@"/", "-");
-            if (!IsContextValid(dataHoje)) return false;
-            FinalizeSave(Arq, Tam);
             return true;
         }
 
-        private string GetTargetFilePath()
+        private string BuildFilePath()
         {
-            string Atual = cIni.ReadString("Projetos", "Atual", "");
-            string SubAtiv = "";
-            if (cbSubprojeto.Visible)
-                if (cbSubprojeto.Text != "GERAL")
-                    SubAtiv = @"" + cbSubprojeto.Text;
-            string Pasta = this.PastaGeral + @"" + Atual + SubAtiv;
-            if (Directory.Exists(Pasta) == false)
-                Directory.CreateDirectory(Pasta);
-            string[] Parts = Filename.Split('\');
-        return Pasta + @"" + Parts[Parts.Length - 1];
+            string currentProject = cIni.ReadString("Projetos", "Atual", "");
+            string subProject = cbSubprojeto.Visible && cbSubprojeto.Text != "GERAL" ? @"\" + cbSubprojeto.Text : "";
+            string folder = this.PastaGeral + @"\" + currentProject + subProject;
+            string[] parts = Filename.Split('\\');
+            return folder + @"\" + parts[parts.Length - 1];
         }
 
-        private bool IsContextValid(string dataHoje)
+        private bool ValidateFileContext(string path)
         {
-            string dataArquivo = Helper.ExtractDateFromFileName(Path.GetFileName(this.Filename));
-            if (dataArquivo != dataHoje)
-            {
-                this.Loga($"Salvando arquivo antigo: {Path.GetFileName(this.Filename)}");
-                return true;
-            }
-            string expectedFilename = this.NomeDoArquivo(dataHoje);
+            string today = Fun.Agora().ToShortDateString().Replace(@"/", "-");
+            string fileDate = Helper.ExtractDateFromFileName(Path.GetFileName(this.Filename));
+
+            if (fileDate != today) this.Loga($"Salvando arquivo antigo: {Path.GetFileName(this.Filename)}");
+            else if (!IsValidFileName(today)) return false;
+
+            return true;
+        }
+
+        private bool IsValidFileName(string today)
+        {
+            string expectedFilename = this.NomeDoArquivo(today);
             if (!string.IsNullOrEmpty(this.Filename) && !this.Filename.EndsWith(Path.GetFileName(expectedFilename)))
             {
-                return HandleInvalidContext(expectedFilename);
+                HandleInvalidContext(expectedFilename);
+                return false;
             }
             return true;
         }
 
-        private bool HandleInvalidContext(string expectedFilename)
+        private void HandleInvalidContext(string expectedFilename)
         {
-            DialogResult resposta = ShowWarningDialog(expectedFilename);
-            string backupPath = CreateBackup();
-            LogInvalidContext(expectedFilename, backupPath);
-            if (resposta == DialogResult.Yes && this.Logar)
-            {
-                TryOpenLog();
-            }
-            return false;
-        }
+            string errorMessage = "⚠️ ATENÇÃO: Contexto inválido para salvamento!\n\n" +
+                                  $"Arquivo atual: {Path.GetFileName(this.Filename)}\n" +
+                                  $"Esperado: {Path.GetFileName(expectedFilename)}\n\n" +
+                                  "O conteúdo será salvo como cópia de segurança para não perder dados.\n\n" +
+                                  "Deseja ver o log para investigar?";
 
-        private DialogResult ShowWarningDialog(string expectedFilename)
-        {
-            string msgErro = "⚠️ ATENÇÃO: Contexto inválido para salvamento!\n\n" +
-            $"Arquivo atual: {Path.GetFileName(this.Filename)}\n" +
-            $"Esperado: {Path.GetFileName(expectedFilename)}\n\n" +
-            "O conteúdo será salvo como cópia de segurança para não perder dados.\n\n" +
-            "Deseja ver o log para investigar?";
-            return MessageBox.Show(msgErro,
-            this.TitAplicativo,
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning);
-        }
+            DialogResult response = MessageBox.Show(errorMessage, this.TitAplicativo, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
 
-        private string CreateBackup()
-        {
-            string backupPath = Path.Combine(Path.GetDirectoryName(this.Filename),
-            "backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
+            string backupPath = Path.Combine(Path.GetDirectoryName(this.Filename), "backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
             File.WriteAllText(backupPath, Content);
-            return backupPath;
-        }
 
-        private void LogInvalidContext(string expectedFilename, string backupPath)
-        {
             this.Loga($"⚠️ ERRO: Contexto inválido. Salvando backup em: {backupPath}");
             this.Loga($"    Filename atual: {this.Filename}");
             this.Loga($"    Filename esperado: {expectedFilename}");
             this.Loga($"    Atual: {this.Atual}");
             this.Loga($"    SUbAtual: {this.SUbAtual}");
             this.Loga($"    Content.Length: {Content.Length}");
-        }
 
-        private void TryOpenLog()
-        {
-            try
+            if (response == DialogResult.Yes && this.Logar)
             {
-                System.Diagnostics.Process.Start("notepad.exe", this.NomeLog);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Erro ao abrir o log: {ex.Message}",
-                this.TitAplicativo,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+                try { System.Diagnostics.Process.Start("notepad.exe", this.NomeLog); }
+                catch (Exception ex) { MessageBox.Show($"Erro ao abrir o log: {ex.Message}", this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Error); }
             }
         }
 
-        private void FinalizeSave(string arq, int tam)
+        private void SaveFile(string path)
         {
-            File.WriteAllText(arq, Content);
+            File.WriteAllText(path, Content);
             IsDirty = false;
-            this.Loga("Arquivo " + Filename + " salvo " + tam.ToString() + " bytes");
-            String HoraSalva = Fun.Agora().ToString(@"hh:mm:ss");
-            toolStripStatusLabel1.Text = "Gravado às : " + HoraSalva;
+            this.Loga("Arquivo " + Filename + " salvo " + Content.Length.ToString() + " bytes");
+            string saveTime = Fun.Agora().ToString(@"hh\:mm\:ss");
+            toolStripStatusLabel1.Text = "Gravado às : " + saveTime;
             this.AjustaCorFundo();
         }
-        // Processamento FIM
+
+// Save FIM
 
         //private bool Save()
         //{
