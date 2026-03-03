@@ -203,6 +203,17 @@ namespace Anoteitor
 
             Console.WriteLine("Nome.Length = " + Escolhido.Nome.Length.ToString());
 
+            // ✅ CORREÇÃO CRÍTICA 1: Não salva automaticamente arquivos antigos
+            string today = Fun.Agora().ToShortDateString().Replace(@"/", "-");
+            string fileDate = Helper.ExtractDateFromFileName(Path.GetFileName(this.Filename));
+
+            if (fileDate != today && this.Escolhido.usado == true)
+            {
+                this.Loga($"⚠️ Timer ignorado: arquivo antigo ({fileDate}) não salva automaticamente");
+                toolStripStatusLabel1.Text = "⚠️ Edite e salve manualmente arquivos antigos";
+                return; // ← INTERROMPE salvamento automático para arquivos antigos
+            }
+
             if (this.Escolhido.usado == false)
             {
                 if (this.Escolhido.Nome.Length > 0)
@@ -239,7 +250,7 @@ namespace Anoteitor
                     cbArquivos.Items.Add(sData);
                     cbArquivos.Text = sData;
 
-                    // ✅ CORREÇÃO: Usa NomeDoArquivo() que inclui subpasta corretamente
+                    // ✅ CORREÇÃO CRÍTICA 2: Usa NomeDoArquivo() que inclui subpasta corretamente
                     this.DataSalva = DataAgora;
                     this.Filename = this.NomeDoArquivo(Data);
                     this.Text = Path.GetFileName(this.Filename) + " - " + this.TitAplicativo;
@@ -249,11 +260,15 @@ namespace Anoteitor
                     this.AjustaCorFundo();
                 }
 
-                // ✅ Salva no arquivo correto
+                // ✅ CORREÇÃO CRÍTICA 3: Só salva se o contexto é válido
+                // O método Save() já contém a validação ValidateFileContext() que:
+                // - Permite salvar arquivos antigos SOMENTE via ação explícita (não via timer)
+                // - Valida rigorosamente arquivos do dia atual
+                // - Cria pasta antes de salvar (BuildDirectoryPath)
+                // - Trata UnauthorizedAccessException com estratégia de recuperação
                 this.Save();
             }
         }
-        
 
         private void Loga(string texto)
         {
@@ -589,23 +604,46 @@ namespace Anoteitor
             UpdateTitle();
         }
 
-// Save INICIO
+        #region Salvamento
+
+
+        // Save INICIO
 
         private bool Save()
         {
-            // Refatorado em 03/03/26 Original 70 linhas, resultado 12 linhas
+            // Refatorado em 03/03/26 - Corrigido em 04/03/26 para resolver UnauthorizedAccessException
             if (!IsDirty) return true;
-
             if (!ValidateContent()) return true;
 
             toolStripStatusLabel1.Text = "Salvando arquivo";
 
-            string path = BuildFilePath();
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+            // ✅ Separa CORRETAMENTE: pasta (para criar) × arquivo (para salvar)
+            string directoryPath = BuildDirectoryPath(); // ← APENAS a pasta, SEM nome do arquivo
+            string filePath = BuildFilePath();           // ← Caminho COMPLETO do arquivo
 
-            if (!ValidateFileContext(path)) return false;
+            // ✅ Cria a PASTA (não o arquivo!) antes de salvar
+            if (!Directory.Exists(directoryPath))
+            {
+                try
+                {
+                    Directory.CreateDirectory(directoryPath);
+                    this.Loga($"Pasta criada: {directoryPath}");
+                }
+                catch (Exception ex)
+                {
+                    this.Loga($"❌ Erro ao criar pasta {directoryPath}: {ex.Message}");
+                    MessageBox.Show($"Não foi possível criar a pasta:\n{directoryPath}\n\n{ex.Message}",
+                                   this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
+            }
 
-            SaveFile(path);
+            // ✅ Valida contexto SOMENTE para arquivos do dia atual
+            if (!ValidateFileContext(filePath))
+                return false;
+
+            // ✅ Salva com tratamento robusto de exceções
+            SaveFile(filePath);
             return true;
         }
 
@@ -620,34 +658,52 @@ namespace Anoteitor
             return true;
         }
 
-        private string BuildFilePath()
+        private string BuildDirectoryPath()
         {
+            // ✅ Retorna APENAS o caminho da PASTA (sem nome do arquivo!)
             string currentProject = cIni.ReadString("Projetos", "Atual", "");
             string subProject = cbSubprojeto.Visible && cbSubprojeto.Text != "GERAL" ? @"\" + cbSubprojeto.Text : "";
-            string folder = this.PastaGeral + @"\" + currentProject + subProject;
-            string[] parts = Filename.Split('\\');
-            return folder + @"\" + parts[parts.Length - 1];
+            return Path.Combine(this.PastaGeral, currentProject, subProject.TrimStart('\\'));
         }
 
-        private bool ValidateFileContext(string path)
+        private string BuildFilePath()
+        {
+            // ✅ Retorna caminho COMPLETO do arquivo
+            string directory = BuildDirectoryPath();
+            string fileName = Path.GetFileName(this.Filename);
+            return Path.Combine(directory, fileName);
+        }
+
+        private bool ValidateFileContext(string filePath)
         {
             string today = Fun.Agora().ToShortDateString().Replace(@"/", "-");
             string fileDate = Helper.ExtractDateFromFileName(Path.GetFileName(this.Filename));
 
-            if (fileDate != today) this.Loga($"Salvando arquivo antigo: {Path.GetFileName(this.Filename)}");
-            else if (!IsValidFileName(today)) return false;
+            // ✅ Arquivos antigos: NÃO salvam automaticamente via timer!
+            // Isso evita sobrescrever arquivos do dia atual com conteúdo de arquivos antigos
+            if (fileDate != today)
+            {
+                // ⚠️ Só permite salvar arquivo antigo se for ação EXPLÍCITA do usuário (não via timer)
+                if (this.timer1.Enabled && this.timer1.Tag == null)
+                {
+                    this.Loga($"⚠️ Bloqueado salvamento automático de arquivo antigo: {Path.GetFileName(this.Filename)}");
+                    toolStripStatusLabel1.Text = "⚠️ Salvamento automático desativado para arquivos antigos";
+                    return false;
+                }
 
-            return true;
-        }
+                this.Loga($"Salvando arquivo antigo (ação explícita): {Path.GetFileName(this.Filename)}");
+                return true;
+            }
 
-        private bool IsValidFileName(string today)
-        {
+            // ✅ Arquivos do dia atual: valida rigorosamente
             string expectedFilename = this.NomeDoArquivo(today);
-            if (!string.IsNullOrEmpty(this.Filename) && !this.Filename.EndsWith(Path.GetFileName(expectedFilename)))
+            if (!string.IsNullOrEmpty(this.Filename) &&
+                !this.Filename.EndsWith(Path.GetFileName(expectedFilename)))
             {
                 HandleInvalidContext(expectedFilename);
                 return false;
             }
+
             return true;
         }
 
@@ -661,11 +717,20 @@ namespace Anoteitor
 
             DialogResult response = MessageBox.Show(errorMessage, this.TitAplicativo, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
 
-            string backupPath = Path.Combine(Path.GetDirectoryName(this.Filename), "backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
-            File.WriteAllText(backupPath, Content);
+            string backupPath = Path.Combine(Path.GetDirectoryName(this.Filename),
+                                            "backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
 
-            this.Loga($"⚠️ ERRO: Contexto inválido. Salvando backup em: {backupPath}");
-            this.Loga($"    Filename atual: {this.Filename}");
+            try
+            {
+                File.WriteAllText(backupPath, Content);
+                this.Loga($"⚠️ Backup criado: {backupPath}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erro ao criar backup: {ex.Message}", this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            this.Loga($"⚠️ ERRO: Contexto inválido. Filename atual: {this.Filename}");
             this.Loga($"    Filename esperado: {expectedFilename}");
             this.Loga($"    Atual: {this.Atual}");
             this.Loga($"    SUbAtual: {this.SUbAtual}");
@@ -680,120 +745,68 @@ namespace Anoteitor
 
         private void SaveFile(string path)
         {
-            File.WriteAllText(path, Content);
-            IsDirty = false;
-            this.Loga("Arquivo " + Filename + " salvo " + Content.Length.ToString() + " bytes");
-            string saveTime = Fun.Agora().ToString(@"hh\:mm\:ss");
-            toolStripStatusLabel1.Text = "Gravado às : " + saveTime;
-            this.AjustaCorFundo();
+            try
+            {
+                // ✅ Tenta salvar normalmente
+                File.WriteAllText(path, Content, _encoding ?? Encoding.UTF8);
+                IsDirty = false;
+                this.Loga("Arquivo salvo: " + path + " (" + Content.Length.ToString() + " bytes)");
+                string saveTime = Fun.Agora().ToString(@"hh\:mm\:ss");
+                toolStripStatusLabel1.Text = "Gravado às: " + saveTime;
+                this.AjustaCorFundo();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                // ⚠️ Arquivo bloqueado - estratégia de recuperação com arquivo temporário
+                this.Loga($"⚠️ UnauthorizedAccessException: {ex.Message}");
+
+                try
+                {
+                    // Estratégia: salva em arquivo temporário e depois move
+                    string tempPath = path + ".tmp";
+                    File.WriteAllText(tempPath, Content, _encoding ?? Encoding.UTF8);
+
+                    // Remove arquivo original se existir
+                    if (File.Exists(path))
+                        File.Delete(path);
+
+                    // Renomeia temporário para definitivo
+                    File.Move(tempPath, path);
+
+                    IsDirty = false;
+                    this.Loga("Arquivo salvo com recuperação: " + path);
+                    string saveTime = Fun.Agora().ToString(@"hh\:mm\:ss");
+                    toolStripStatusLabel1.Text = "Gravado às: " + saveTime;
+                    this.AjustaCorFundo();
+                }
+                catch (Exception innerEx)
+                {
+                    this.Loga($"❌ Falha total ao salvar: {innerEx.Message}");
+                    MessageBox.Show(
+                        $"Erro crítico ao salvar:\n{path}\n\n{innerEx.Message}\n\nVerifique se o arquivo não está aberto em outro programa.",
+                        this.TitAplicativo,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error
+                    );
+                    throw;
+                }
+            }
+            catch (IOException ex)
+            {
+                this.Loga($"❌ IOException ao salvar: {ex.Message}");
+                MessageBox.Show(
+                    $"Erro de acesso ao arquivo:\n{path}\n\n{ex.Message}",
+                    this.TitAplicativo,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning
+                );
+                throw;
+            }
         }
 
-// Save FIM
+        #endregion
 
-        //private bool Save()
-        //{
-        //    if (!IsDirty) return true;
-
-        //    int Tam = Content.Length;
-
-        //    if (Tam < 1)
-        //    {
-        //        this.Loga("Ia salvar vazio");
-        //        return true;
-        //    }
-
-        //    toolStripStatusLabel1.Text = "Salvando arquivo";
-
-        //    string Atual = cIni.ReadString("Projetos", "Atual", "");
-        //    string SubAtiv = "";
-
-        //    if (cbSubprojeto.Visible)
-        //        if (cbSubprojeto.Text != "GERAL")
-        //            SubAtiv = @"\" + cbSubprojeto.Text;
-
-        //    string Pasta = this.PastaGeral + @"\" + Atual + SubAtiv;
-
-        //    if (Directory.Exists(Pasta) == false)
-        //        Directory.CreateDirectory(Pasta);
-
-        //    string[] Parts = Filename.Split('\\');
-        //    string Arq = Pasta + @"\" + Parts[Parts.Length - 1];
-
-        //    // ✅ VALIDAÇÃO: Verifica se o arquivo sendo salvo é do dia atual
-        //    string dataHoje = Fun.Agora().ToShortDateString().Replace(@"/", "-");
-        //    string dataArquivo = Helper.ExtractDateFromFileName(Path.GetFileName(this.Filename));
-
-        //    // Se for arquivo antigo, NÃO valida contra o dia atual
-        //    if (dataArquivo != dataHoje)
-        //    {
-        //        // ✅ É arquivo antigo - permite salvar normalmente
-        //        this.Loga($"Salvando arquivo antigo: {Path.GetFileName(this.Filename)}");
-        //    }
-        //    else
-        //    {
-        //        // ✅ É arquivo do dia atual - faz validação extra
-        //        string expectedFilename = this.NomeDoArquivo(dataHoje);
-
-        //        if (!string.IsNullOrEmpty(this.Filename) &&
-        //            !this.Filename.EndsWith(Path.GetFileName(expectedFilename)))
-        //        {
-        //            // ⚠️ Contexto inválido detectado!
-        //            string msgErro = "⚠️ ATENÇÃO: Contexto inválido para salvamento!\n\n" +
-        //                            $"Arquivo atual: {Path.GetFileName(this.Filename)}\n" +
-        //                            $"Esperado: {Path.GetFileName(expectedFilename)}\n\n" +
-        //                            "O conteúdo será salvo como cópia de segurança para não perder dados.\n\n" +
-        //                            "Deseja ver o log para investigar?";
-
-        //            DialogResult resposta = MessageBox.Show(msgErro,
-        //                                                   this.TitAplicativo,
-        //                                                   MessageBoxButtons.YesNo,
-        //                                                   MessageBoxIcon.Warning);
-
-        //            // 📋 Salvar como backup
-        //            string backupPath = Path.Combine(Path.GetDirectoryName(this.Filename),
-        //                                            "backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
-        //            File.WriteAllText(backupPath, Content);
-
-        //            this.Loga($"⚠️ ERRO: Contexto inválido. Salvando backup em: {backupPath}");
-        //            this.Loga($"    Filename atual: {this.Filename}");
-        //            this.Loga($"    Filename esperado: {expectedFilename}");
-        //            this.Loga($"    Atual: {this.Atual}");
-        //            this.Loga($"    SUbAtual: {this.SUbAtual}");
-        //            this.Loga($"    Content.Length: {Content.Length}");
-
-        //            // 👁️ Se usuário quiser ver o log, abrir com Bloco de Notas
-        //            if (resposta == DialogResult.Yes && this.Logar)
-        //            {
-        //                try
-        //                {
-        //                    System.Diagnostics.Process.Start("notepad.exe", this.NomeLog);
-        //                }
-        //                catch (Exception ex)
-        //                {
-        //                    MessageBox.Show($"Erro ao abrir o log: {ex.Message}",
-        //                                   this.TitAplicativo,
-        //                                   MessageBoxButtons.OK,
-        //                                   MessageBoxIcon.Error);
-        //                }
-        //            }
-
-        //            return false;
-        //        }
-        //    }
-
-        //    // ✅ Salvar normalmente
-        //    File.WriteAllText(Arq, Content);
-        //    IsDirty = false;
-
-        //    this.Loga("Arquivo " + Filename + " salvo " + Tam.ToString() + " bytes");
-
-        //    String HoraSalva = Fun.Agora().ToString(@"hh\:mm\:ss");
-        //    toolStripStatusLabel1.Text = "Gravado às : " + HoraSalva;
-
-        //    this.AjustaCorFundo();
-
-        //    return true;
-        //}
+        // Save FIM
 
         private bool SaveAs()
         {
