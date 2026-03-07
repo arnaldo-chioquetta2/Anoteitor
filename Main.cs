@@ -1630,7 +1630,18 @@ namespace Anoteitor
 
         private void cbProjetos_DropDownClosed(object sender, EventArgs e)
         {
-            this.SafeDisableTimer();
+            Console.WriteLine("cbProjetos_DropDownClosed");
+
+            // ✅ CORREÇÃO: Salva antes de trocar
+            if (this.Carregado && this.IsDirty)
+            {
+                this.Loga("Salvando antes de trocar de projeto");
+                this.Save();
+            }
+
+            // ✅ CORREÇÃO: Desabilita timer
+            this.timer1.Enabled = false;
+
             this.Atual = cbProjetos.Text;
             cIni.WriteString("Projetos", "Atual", cbProjetos.Text);
             this.CarregaArquivoDoProjeto(true);
@@ -1742,15 +1753,16 @@ namespace Anoteitor
         {
             this.Loga("AtuArqASerMostrado");
             this.Loga("Carregado = " + this.Carregado.ToString());
+
             if (this.Carregado)
             {
                 Loga("cbArquivos.Text = " + cbArquivos.Text);
+
                 if (cbArquivos.Text.Length > 0)
-                {                    
+                {
                     if (cbArquivos.Text == "TUDO")
                     {
                         string Pasta = this.PastaGeral + @"\" + this.Atual + @"\" + this.SUbAtual;
-                        // string Pasta = this.PastaGeral + @"\" + this.Atual + PastaSub;
                         cbArquivos.Items.Clear();
                         DirectoryInfo info = new DirectoryInfo(Pasta);
                         FileInfo[] arquivos = info.GetFiles().OrderBy(p => p.CreationTime).ToArray();
@@ -1765,13 +1777,24 @@ namespace Anoteitor
                         }
                         cbArquivos.Text = this.cbArquivosOld;
                     }
-                    else
-                        if (cbArquivos.Text != this.cbArquivosOld)
+                    else if (cbArquivos.Text != this.cbArquivosOld)
                     {
+                        // ✅ CORREÇÃO CRÍTICA 1: Salva conteúdo atual ANTES de carregar novo arquivo
+                        if (this.IsDirty)
+                        {
+                            this.Loga("Salvando antes de trocar de data/arquivo");
+                            this.Save();
+                        }
+
+                        // ✅ CORREÇÃO CRÍTICA 2: Desabilita timer para evitar salvamento conflitante
+                        this.timer1.Enabled = false;
+
+                        // ✅ Carrega novo arquivo SOMENTE após garantir salvamento do anterior
                         Filename = NomeDoArquivo(cbArquivos.Text);
                         Open(this.Filename);
                         cbArquivosOld = cbArquivos.Text;
                     }
+
                     if (Atual != this.AtualAnt)
                     {
                         this.AtualAnt = this.Atual;
@@ -1967,61 +1990,45 @@ namespace Anoteitor
 
         private void cbSubprojeto_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (!this.Carregado) return;
+            Console.WriteLine("cbSubprojeto_SelectedIndexChanged");
 
-            // Evita reentrada ou troca desnecessária
-            if (cbSubprojeto.Text == this.cbArquivosSUbOld) return;
-
-            // 🔒 1. Desabilita o timer para evitar salvamento em contexto errado
-            if (this.timer1.Enabled)
+            if (this.Carregado && cbSubprojeto.Text != this.cbArquivosSUbOld)
             {
-                this.timer1.Enabled = false;
-                // ⚠️ Força salvamento imediato se houver alterações
+                // ✅ CORREÇÃO: Salva antes de trocar
                 if (this.IsDirty)
                 {
+                    this.Loga("Salvando antes de trocar de subatividade");
                     this.Save();
                 }
+
+                string sData = Fun.Agora().ToShortDateString();
+                string Data = sData.Replace(@"/", "-");
+                this.SUbAtual = cbSubprojeto.Text;
+                cIni.WriteString(this.Atual, "SubAtual", this.SUbAtual);
+
+                // ✅ CORREÇÃO: Desabilita timer para evitar salvamento errado
+                this.timer1.Enabled = false;
+
+                this.Filename = NomeDoArquivo(Data);
+                this.Open(this.Filename);
+                this.cbArquivosSUbOld = this.SUbAtual;
+
+                string PastaSubAtual = "";
+                if (this.SUbAtual == "")
+                    renomearToolStripMenuItem.Enabled = false;
+                else
+                {
+                    PastaSubAtual = @"\" + this.SUbAtual;
+                    renomearToolStripMenuItem.Enabled = true;
+                }
+                apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
+
+                string PastaSub = this.PastaGeral + @"\" + this.Atual + PastaSubAtual;
+                if (cIni.ReadBool("Projetos", "CopiaOutroDia", false))
+                    this.HojeVazio = true;
+
+                this.PreparaComboArquivo(PastaSub);
             }
-
-            // 📥 2. Salva o estado atual antes de mudar de subatividade
-            if (this.IsDirty)
-            {
-                this.Save(); // Garante que o conteúdo atual seja persistido no arquivo correto
-            }
-
-            // 🔄 3. Atualiza o contexto da nova subatividade
-            string sData = Fun.Agora().ToShortDateString();
-            string Data = sData.Replace(@"/", "-");
-            this.SUbAtual = cbSubprojeto.Text;
-            cIni.WriteString(this.Atual, "SubAtual", this.SUbAtual);
-
-            // 📁 4. Define o novo caminho do arquivo
-            this.Filename = NomeDoArquivo(Data);
-
-            // 📖 5. Carrega o novo arquivo
-            this.Open(this.Filename);
-
-            // 🧠 6. Atualiza estado de controle
-            this.cbArquivosSUbOld = this.SUbAtual;
-
-            // 🎨 7. Atualiza UI
-            if (string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL")
-            {
-                renomearToolStripMenuItem.Enabled = false;
-            }
-            else
-            {
-                renomearToolStripMenuItem.Enabled = true;
-            }
-            apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
-
-            // 🗂️ 8. Prepara combo de arquivos da nova subpasta
-            string PastaSub = Path.Combine(this.PastaGeral, this.Atual, this.SUbAtual == "GERAL" ? "" : this.SUbAtual);
-            if (cIni.ReadBool("Projetos", "CopiaOutroDia", false))
-            {
-                this.HojeVazio = true;
-            }
-            this.PreparaComboArquivo(PastaSub);
         }
 
         private void renomearToolStripMenuItem_Click(object sender, EventArgs e)
