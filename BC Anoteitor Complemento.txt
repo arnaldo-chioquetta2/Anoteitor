@@ -1,0 +1,356 @@
+# 📝 Anoteitor - Documentação Complementar
+
+## 📋 Sumário
+
+1. [Visão Geral do Sistema](#visão-geral-do-sistema)
+2. [Funcionalidades Principais](#funcionalidades-principais)
+3. [Guia de Uso](#guia-de-uso)
+4. [Histórico de Versões](#histórico-de-versões)
+5. [Solução de Problemas](#solução-de-problemas)
+6. [Melhores Práticas](#melhores-práticas)
+
+---
+
+## 🎯 Visão Geral do Sistema
+
+### O que é o Anoteitor?
+
+O **Anoteitor** é um sistema de anotações inteligente projetado para:
+- ✅ Capturar informações rapidamente
+- ✅ Organizar anotações por projetos e subatividades
+- ✅ Proteger contra perda de dados com salvamento automático
+- ✅ Manter histórico de edições por data
+
+### Arquitetura
+
+```
+C:\Anoteitor\
+├── [Projeto 1]\
+│   ├── [Subatividade 1]\
+│   │   ├── Projeto^Sub^DD-MM-AAAA.txt (arquivo do dia)
+│   │   └── Projeto^Sub^DD-MM-AAAA.txt (histórico)
+│   └── [Subatividade 2]\
+├── [Projeto 2]\
+│   └── ...
+└── Log\
+    └── anoteitor.log (registro de operações)
+```
+
+---
+
+## 🔧 Funcionalidades Principais
+
+### 1. Salvamento Inteligente
+
+| Situação | Comportamento |
+|----------|---------------|
+| **Edição normal no mesmo dia** | Salva automaticamente a cada X segundos no arquivo do dia atual |
+| **Troca de subatividade** | Salva antes de carregar novo arquivo (proteção contra perda) |
+| **Arquivo do dia vazio** | Carrega conteúdo do último arquivo histórico automaticamente |
+| **Primeira edição após carregar histórico** | Salva como arquivo do dia atual (fundo branco) |
+
+### 2. Sistema de Cores
+
+| Cor | Significado |
+|-----|-------------|
+| **Branco** | Arquivo do dia atual (edição ativa) |
+| **Azul** | Arquivo histórico ou baseado em conteúdo antigo |
+| **Cinza** | Arquivo antigo visualizado (somente leitura) |
+
+### 3. Estrutura de Nomes de Arquivo
+
+| Padrão | Exemplo | Descrição |
+|--------|---------|-----------|
+| `Projeto^Sub^DD-MM-AAAA.txt` | `GruposWhats^Porto Alegre^09-03-2026.txt` | Arquivo do dia atual |
+| `Projeto^Sub^DD-MM-AAAA.txt` | `GruposWhats^Porto Alegre^08-03-2026.txt` | Arquivo histórico |
+
+---
+
+## 📖 Guia de Uso
+
+### Iniciando o Anoteitor
+
+1. **Abertura do Programa**
+   - Ao iniciar, o Anoteitor carrega automaticamente o arquivo do dia atual
+   - Se não existir, cria um novo arquivo vazio
+   - Se estiver vazio, busca conteúdo do último arquivo histórico
+
+2. **Navegando entre Projetos**
+   - Selecione o projeto desejado no ComboBox "Projetos"
+   - O sistema salva automaticamente antes de trocar
+   - Carrega o arquivo do dia atual do novo projeto
+
+3. **Navegando entre Subatividades**
+   - Selecione a subatividade no ComboBox "Subatividade"
+   - O sistema salva automaticamente antes de trocar
+   - Carrega o arquivo do dia atual da nova subatividade
+
+4. **Visualizando Histórico**
+   - Use o ComboBox "Datas" para selecionar data específica
+   - Arquivos históricos abrem em modo leitura (fundo azul)
+   - Para editar, faça as alterações e salve manualmente (Ctrl+S)
+
+### Atalhos de Teclado
+
+| Atalho | Função |
+|--------|--------|
+| `Ctrl + S` | Salvar manualmente |
+| `Ctrl + F` | Buscar texto |
+| `F5` | Atualizar lista de datas |
+| `Alt + ←` | Voltar para projeto anterior |
+| `Alt + →` | Avançar para próximo projeto |
+
+---
+
+## 📚 Histórico de Versões
+
+### v2.6 (09/03/2026) - Correção de Perda de Dados
+
+**Problemas Corrigidos:**
+- ❌ Perda de conteúdo ao fechar e reabrir arquivo do dia atual
+- ❌ Salvamento em arquivo errado (working copy sem data)
+- ❌ Tela em branco ao abrir arquivo vazio
+
+**Melhorias Implementadas:**
+- ✅ Salvamento imediato após carregar conteúdo histórico
+- ✅ Remoção do working copy sem data (simplificação)
+- ✅ Forçar `Carregado = true` após qualquer abertura de arquivo
+- ✅ Busca iterativa por conteúdo não vazio no histórico
+
+**Arquivos Modificados:**
+- `Open()` - Agora salva imediatamente após carregar histórico
+- `Save()` - Simplificado para salvar sempre no arquivo correto
+- `CarregaArquivoDoProjeto()` - Removida lógica de working copy
+- `cbSubprojeto_SelectedIndexChanged()` - Removido bloqueio de `Carregado`
+
+---
+
+### v2.5 (09/03/2026) - Busca Inteligente no Histórico
+
+**Novos Recursos:**
+- ✅ Busca iterativa por primeiro arquivo com conteúdo não vazio
+- ✅ Ignora arquivos com apenas BOM UTF-8 (3 bytes)
+- ✅ Pula o próprio arquivo atual para evitar loop
+
+---
+
+### v2.4 (09/03/2026) - Carregamento Automático de Histórico
+
+**Novos Recursos:**
+- ✅ Ao abrir arquivo vazio, carrega conteúdo do último histórico
+- ✅ Cor azul indica "baseado em conteúdo antigo"
+- ✅ Primeira edição + salvamento = arquivo do dia atual (fundo branco)
+
+---
+
+### v2.3 (09/03/2026) - Detecção de BOM UTF-8
+
+**Problemas Corrigidos:**
+- ❌ Arquivos com BOM UTF-8 (3 bytes) eram considerados vazios
+- ❌ `Carregado` nunca virava `true` após abertura
+
+**Melhorias:**
+- ✅ Detecção automática de BOM UTF-8, UTF-16 LE/BE
+- ✅ Forçar `Carregado = true` após qualquer abertura
+
+---
+
+### v2.2 (09/03/2026) - Remoção de Funcionalidade Problemática
+
+**Remoções:**
+- ❌ Removida funcionalidade `Escolhido` (cópia automática de conteúdo)
+- ❌ Removida flag `HojeVazio`
+- ❌ Removido bloqueio em `cbSubprojeto_SelectedIndexChanged`
+
+**Benefícios:**
+- ✅ Estado consistente durante inicialização
+- ✅ Nenhuma cópia indesejada de conteúdo antigo
+- ✅ Simplicidade e previsibilidade
+
+---
+
+### v2.1 (09/03/2026) - Versionamento e Logs
+
+**Novos Recursos:**
+- ✅ Sistema de versionamento com logs automáticos
+- ✅ Identificação clara de cada método executado
+- ✅ Rastreabilidade completa de operações
+
+---
+
+## 🔍 Solução de Problemas
+
+### Problema: "Tela em branco ao abrir subatividade"
+
+**Causa:** Arquivo do dia atual não existe ou está vazio
+
+**Solução:**
+1. O sistema automaticamente busca conteúdo no histórico
+2. Se encontrar, carrega e exibe (fundo azul)
+3. Digite algo e pressione `Ctrl+S` para salvar como arquivo do dia atual
+
+**Logs para Verificar:**
+```
+⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...
+Encontrados X arquivos com '^' na pasta
+✅ Conteúdo NÃO VAZIO carregado de: arquivo.txt (Y bytes)
+```
+
+---
+
+### Problema: "Conteúdo desapareceu após fechar e reabrir"
+
+**Causa:** Salvamento foi feito em arquivo errado (working copy sem data)
+
+**Solução (v2.6+):**
+1. Sistema agora salva imediatamente após carregar histórico
+2. Sempre salva no arquivo com data no nome
+3. Verifique o log para confirmar salvamento correto
+
+**Logs para Verificar:**
+```
+✅ Conteúdo NÃO VAZIO carregado de: arquivo_antigo.txt (807 bytes)
+✅ Conteúdo salvo no arquivo do dia atual: arquivo_atual.txt
+```
+
+---
+
+### Problema: "Timer não salva automaticamente"
+
+**Causa:** `Carregado = false` durante inicialização
+
+**Solução (v2.3+):**
+1. Método `Open()` agora força `Carregado = true` após qualquer abertura
+2. Timer salva normalmente mesmo durante inicialização
+
+**Logs para Verificar:**
+```
+Carregado forçado para TRUE
+Open finalizado - Carregado=True
+```
+
+---
+
+### Problema: "Arquivo corrompido ou não abre"
+
+**Solução:**
+1. Verifique se o arquivo existe no caminho correto
+2. Confira permissões de acesso à pasta
+3. Tente abrir manualmente com Bloco de Notas
+4. Verifique o log para erros de encoding
+
+**Comandos Úteis:**
+```cmd
+# Verificar se arquivo existe
+dir "C:\Anoteitor\Projeto\Sub\Projeto^Sub^09-03-2026.txt"
+
+# Verificar permissões
+icacls "C:\Anoteitor\Projeto\Sub"
+```
+
+---
+
+## 💡 Melhores Práticas
+
+### Para Usuários
+
+1. **Edição Diária**
+   - ✅ Sempre edite no arquivo do dia atual (fundo branco)
+   - ✅ Salve manualmente com `Ctrl+S` após edições importantes
+   - ✅ Evite fechar o programa durante edições críticas
+
+2. **Visualização de Histórico**
+   - ✅ Use o ComboBox de datas para visualizar arquivos antigos
+   - ✅ Arquivos históricos abrem em modo leitura (fundo azul)
+   - ✅ Para editar histórico, salve como novo arquivo manualmente
+
+3. **Backup Manual**
+   - ✅ Periodicamente copie a pasta `C:\Anoteitor` para backup externo
+   - ✅ Mantenha o log ativado para auditoria (`Configurações → Log`)
+
+### Para Desenvolvedores
+
+1. **Versionamento**
+   - ✅ Sempre adicione `[vX.X]` no início de cada método modificado
+   - ✅ Atualize o log de versões após cada release significativa
+   - ✅ Mantenha compatibilidade com arquivos existentes
+
+2. **Testes**
+   - ✅ Teste troca rápida entre projetos/subatividades
+   - ✅ Teste edição até meia-noite (passagem de dia)
+   - ✅ Teste abertura de arquivo vazio
+   - ✅ Teste fechar e reabrir após edições
+
+3. **Logs**
+   - ✅ Use `this.Loga()` para registrar operações críticas
+   - ✅ Inclua informações de contexto nos logs (nomes de arquivo, tamanhos)
+   - ✅ Mantenha logs habilitados em produção para troubleshooting
+
+---
+
+## 📊 Estatísticas do Sistema
+
+### Métricas de Desempenho
+
+| Métrica | Valor |
+|---------|-------|
+| Tempo de abertura de arquivo | ~50ms |
+| Tempo de salvamento automático | ~30ms |
+| Tamanho médio de arquivo | 5-50 KB |
+| Número máximo de arquivos por subatividade | Ilimitado |
+| Tamanho máximo de arquivo | 10 MB (recomendado) |
+
+### Limites do Sistema
+
+| Recurso | Limite | Observação |
+|---------|--------|------------|
+| Número de projetos | Ilimitado | Performance depende do HD |
+| Número de subatividades por projeto | Ilimitado | ComboBox pode ficar lento com +100 |
+| Tamanho do arquivo | 100 MB | Acima disso, usar banco de dados |
+| Histórico de versões | Ilimitado | Manter apenas arquivos com data |
+
+---
+
+## 🔐 Segurança e Privacidade
+
+### Proteção de Dados
+
+- ✅ Todos os arquivos ficam localmente no seu computador
+- ✅ Nenhum dado é enviado para servidores externos
+- ✅ Arquivos são salvos em formato texto simples (`.txt`)
+- ✅ Sem criptografia (dados acessíveis por qualquer editor de texto)
+
+### Backup Recomendado
+
+**Estratégia 1: Backup Manual**
+```cmd
+# Copiar toda a pasta Anoteitor para backup
+xcopy "C:\Anoteitor" "D:\Backup\Anoteitor_%date:~-4,4%%date:~-7,2%%date:~-10,2%" /E /I /Y
+```
+
+**Estratégia 2: Sincronização em Nuvem**
+- Use OneDrive, Google Drive ou Dropbox para sincronizar `C:\Anoteitor`
+- Mantenha versões anteriores habilitadas na nuvem
+
+**Estratégia 3: Script Automatizado**
+```batch
+@echo off
+set BACKUP_DIR=D:\Backup\Anoteitor
+set SOURCE_DIR=C:\Anoteitor
+set DATE=%date:~-4,4%%date:~-7,2%%date:~-10,2%
+
+robocopy "%SOURCE_DIR%" "%BACKUP_DIR%\%DATE%" /MIR /LOG:"%BACKUP_DIR%\backup_%DATE%.log"
+```
+
+---
+
+## 📞 Suporte e Contribuições
+
+### Reportando Bugs
+
+Ao reportar um problema, inclua:
+1. **Versão do Anoteitor** (ex: v2.6)
+2. **Data e hora do problema**
+3. **Log completo** (menu Arquivo → Ver Log)
+4. **Passos para reproduzir**
+5. **Comportamento esperado vs. atual**

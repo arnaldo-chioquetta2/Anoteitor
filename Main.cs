@@ -634,7 +634,7 @@ namespace Anoteitor
 
         public void Open(string pFilename, string searchText = null, Encoding encoding = null, bool ativar = false)
         {
-            this.Loga("[v2.5] Open: " + pFilename);
+            this.Loga("[v2.6] Open: " + pFilename);
 
             var Filename = pFilename;
             Console.WriteLine("Abrindo " + Filename);
@@ -673,7 +673,7 @@ namespace Anoteitor
             Content = sTemp;
             this.Loga("Conteúdo lido: " + (Content.Length > 0 ? Content.Length + " caracteres" : "VAZIO"));
 
-            // ✅ SE arquivo está vazio (só BOM ou 0 bytes), buscar conteúdo não vazio no histórico
+            // ✅ SE arquivo está vazio (só BOM ou 0 bytes), carregar conteúdo do último arquivo histórico
             if (Content.Length == 0)
             {
                 this.Loga("⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...");
@@ -684,53 +684,59 @@ namespace Anoteitor
                     DirectoryInfo dir = new DirectoryInfo(pasta);
                     if (dir.Exists)
                     {
-                        // Buscar TODOS os arquivos .txt com ^ no nome
                         FileInfo[] todosArquivos = dir.GetFiles("*^*.txt")
-                            .OrderByDescending(f => f.LastWriteTime) // Mais recente primeiro
+                            .OrderByDescending(f => f.LastWriteTime)
                             .ToArray();
 
                         this.Loga($"Encontrados {todosArquivos.Length} arquivos com '^' na pasta");
 
                         // ✅ Iterar até encontrar primeiro arquivo com conteúdo NÃO VAZIO
-                        bool conteudoEncontrado = false;
                         foreach (FileInfo arquivo in todosArquivos)
                         {
-                            // Pular o próprio arquivo atual (evita loop infinito)
                             if (arquivo.FullName == Filename) continue;
 
-                            // Verificar se tem data válida no nome (evita arquivos corrompidos)
                             if (!System.Text.RegularExpressions.Regex.IsMatch(arquivo.Name, @"\d{2}-\d{2}-\d{4}\.txt$"))
                                 continue;
 
-                            // Ler conteúdo do arquivo histórico
                             string conteudoHistorico = File.ReadAllText(arquivo.FullName, Encoding.UTF8);
 
-                            // ✅ Verificar se conteúdo é REALMENTE não vazio (ignorar BOM de 3 bytes)
-                            if (conteudoHistorico.Length > 3) // >3 bytes = conteúdo real além do BOM
+                            if (conteudoHistorico.Length > 3)
                             {
                                 Content = conteudoHistorico;
                                 controlContentTextBox.Text = Content;
-                                controlContentTextBox.BackColor = Color.LightBlue; // Azul = baseado em histórico
-                                IsDirty = true; // Força salvamento na primeira edição
+                                controlContentTextBox.BackColor = Color.LightBlue;
+                                IsDirty = true;
                                 this.Loga($"✅ Conteúdo NÃO VAZIO carregado de: {arquivo.Name} ({Content.Length} bytes)");
-                                conteudoEncontrado = true;
+
+                                // ✅ SALVAR IMEDIATAMENTE no working copy (sem data no nome)
+                                string fileNameWithoutExt = Path.GetFileNameWithoutExtension(Filename);
+                                string[] nameParts = fileNameWithoutExt.Split('^');
+
+                                // Verificar se o último elemento é uma data no formato DD-MM-AAAA
+                                string baseName;
+                                if (nameParts.Length > 1 && System.Text.RegularExpressions.Regex.IsMatch(nameParts[nameParts.Length - 1], @"\d{2}-\d{2}-\d{4}"))
+                                {
+                                    // Remover a data do nome para criar o working copy
+                                    baseName = string.Join("^", nameParts.Take(nameParts.Length - 1));
+                                }
+                                else
+                                {
+                                    // Se não tem data, usar nome completo
+                                    baseName = fileNameWithoutExt;
+                                }
+
+                                string workingCopy = Path.Combine(pasta, baseName + ".txt");
+                                File.WriteAllText(workingCopy, Content, Encoding.UTF8);
+                                this.Loga($"✅ Conteúdo salvo no working copy: {workingCopy}");
+                                this.Filename = workingCopy; // Atualizar para working copy
+                                IsDirty = false;
                                 break;
                             }
                             else
                             {
-                                this.Loga($"⚠️ Arquivo ignorado (vazio/BOM apenas): {arquivo.Name} ({conteudoHistorico.Length} bytes)");
+                                this.Loga($"⚠️ Arquivo ignorado (vazio/BOM apenas): {arquivo.Name}");
                             }
                         }
-
-                        if (!conteudoEncontrado)
-                        {
-                            this.Loga("ℹ️ Nenhum arquivo com conteúdo não vazio encontrado - mantendo arquivo limpo");
-                            controlContentTextBox.BackColor = SystemColors.Window; // Branco = novo arquivo
-                        }
-                    }
-                    else
-                    {
-                        this.Loga("⚠️ Pasta não existe: " + pasta);
                     }
                 }
                 catch (Exception ex)
@@ -763,7 +769,6 @@ namespace Anoteitor
             this.QtMinutos = cIni.ReadInt(Atual, "Tempo", 0);
             this.MotraCaracteres();
 
-            // ✅ FORÇAR Carregado = true após qualquer abertura
             this.Carregado = true;
             this.Loga("Open finalizado - Filename=" + this.Filename + ", Carregado=" + this.Carregado + ", Tamanho=" + Content.Length);
         }
@@ -1683,15 +1688,22 @@ namespace Anoteitor
             }
             string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
 
-            // ✅ Working copy SEM data no nome: Projeto^Sub.txt
-            if (Data == "current")
+            // ✅ PRIORIDADE 1: Working copy SEM data (ex: Empregos^Adi.txt)
+            string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
+
+            // Se working copy existe, usar ele
+            if (File.Exists(workingCopy))
             {
-                return Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
+                this.Loga("Working copy encontrado: " + workingCopy);
+                return workingCopy;
             }
 
-            // Arquivo histórico com data: Projeto^Sub^DD-MM-AAAA.txt
+            // ✅ PRIORIDADE 2: Arquivo do dia atual (ex: Empregos^Adi^09-03-2026.txt)
             string sData = Data.Replace(@"/", "-");
-            return Pasta + @"\" + this.Atual + "^" + nmSUb + sData + ".txt";
+            string todayFile = Pasta + @"\" + this.Atual + "^" + nmSUb + sData + ".txt";
+
+            this.Loga("Working copy não encontrado, usando arquivo do dia: " + todayFile);
+            return todayFile;
         }
 
         private void AtuArqASerMostrado()

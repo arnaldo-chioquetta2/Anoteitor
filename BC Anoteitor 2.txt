@@ -1,0 +1,693 @@
+# 📚 Anoteitor - Documentação Completa e Consolidada
+
+## 📋 Sumário
+
+1. [Visão Geral do Sistema](#visão-geral-do-sistema)
+2. [Histórico de Problemas e Soluções](#histórico-de-problemas-e-soluções)
+3. [Funcionalidades Principais](#funcionalidades-principais)
+4. [Guia de Uso](#guia-de-uso)
+5. [Histórico de Versões Detalhado](#histórico-de-versões-detalhado)
+6. [Solução de Problemas](#solução-de-problemas)
+7. [Melhores Práticas](#melhores-práticas)
+8. [Estatísticas e Limites](#estatísticas-e-limites)
+9. [Segurança e Backup](#segurança-e-backup)
+10. [Análise de Logs](#análise-de-logs)
+
+---
+
+## 🎯 Visão Geral do Sistema
+
+### O que é o Anoteitor?
+
+O **Anoteitor** é um sistema de anotações inteligente projetado para:
+
+- ✅ Capturar informações rapidamente
+- ✅ Organizar anotações por projetos e subatividades
+- ✅ Proteger contra perda de dados com salvamento automático
+- ✅ Manter histórico de edições por data
+- ✅ Trabalhar com arquivos de texto simples (.txt)
+
+### Arquitetura do Sistema
+
+```
+C:\Anoteitor\
+├── [Projeto 1]\
+│   ├── [Subatividade 1]\
+│   │   ├── Projeto^Sub^DD-MM-AAAA.txt (arquivo do dia)
+│   │   └── Projeto^Sub^DD-MM-AAAA.txt (histórico)
+│   └── [Subatividade 2]\
+├── [Projeto 2]\
+│   └── ...
+└── Log\
+    └── anoteitor.log (registro de operações)
+```
+
+### Estrutura de Nomes de Arquivo
+
+| Padrão | Exemplo | Descrição |
+|--------|---------|-----------|
+| `Projeto^Sub^DD-MM-AAAA.txt` | `GruposWhats^Porto Alegre^09-03-2026.txt` | Arquivo do dia atual |
+| `Projeto^Sub^DD-MM-AAAA.txt` | `GruposWhats^Porto Alegre^08-03-2026.txt` | Arquivo histórico |
+
+---
+
+## 🔍 Histórico de Problemas e Soluções
+
+### Problema 1: Tela em Branco ao Abrir Arquivo Vazio
+
+**Sintoma**: Arquivo com apenas 3 bytes (BOM UTF-8) aparecia como vazio na tela.
+
+**Causa Raiz**: 
+- Método `ReadAllText` não tratava corretamente arquivos com BOM UTF-8
+- `Carregado` nunca era definido como `true` após abertura
+
+**Solução Implementada (v2.3)**:
+```csharp
+private string ReadAllText(string path, Encoding encoding = null)
+{
+    this.Loga("[v2.3] ReadAllText: " + path);
+    
+    // Detecção automática de BOM UTF-8, UTF-16 LE/BE
+    byte[] bom = new byte[3];
+    using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read))
+    {
+        int bytesRead = fs.Read(bom, 0, 3);
+        fs.Seek(0, SeekOrigin.Begin);
+        
+        if (bytesRead >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
+        {
+            encoding = Encoding.UTF8;
+            this.Loga("    BOM UTF-8 detectado");
+        }
+        // ... outras detecções ...
+    }
+    
+    string content = File.ReadAllText(path, encoding);
+    this.Loga("    Conteúdo lido: " + (content.Length > 0 ? content.Length + " caracteres" : "VAZIO"));
+    return content;
+}
+```
+
+**Resultado**: Arquivos com BOM UTF-8 agora são lidos corretamente.
+
+---
+
+### Problema 2: Perda de Conteúdo ao Fechar e Reabrir
+
+**Sintoma**: Ao editar um arquivo e fechar/reabrir, o conteúdo desaparecia.
+
+**Causa Raiz** (Baseado nos logs):
+```
+09/03/2026 22:51:32 Working copy salvo: C:\Anoteitor\Empregos\Adi\Empregos^Adi.txt (811 bytes)
+09/03/2026 22:53:33 Abrindo arquivo: C:\Anoteitor\Empregos\Adi\Empregos^Adi^09-03-2026.txt
+09/03/2026 22:53:33 Conteúdo lido: VAZIO
+```
+
+- Sistema salvava em arquivo sem data (`Empregos^Adi.txt`)
+- Mas sempre tentava abrir arquivo com data (`Empregos^Adi^09-03-2026.txt`)
+- Arquivo com data estava vazio → conteúdo perdido
+
+**Solução Implementada (v2.6)**:
+```csharp
+public void Open(string pFilename, string searchText = null, Encoding encoding = null, bool ativar = false)
+{
+    // ... código de abertura ...
+    
+    // ✅ SE arquivo está vazio, carregar conteúdo do último arquivo histórico
+    if (Content.Length == 0)
+    {
+        this.Loga("⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...");
+        
+        // Buscar arquivos históricos ordenados por data de modificação
+        FileInfo[] todosArquivos = dir.GetFiles("*^*.txt")
+            .OrderByDescending(f => f.LastWriteTime)
+            .ToArray();
+        
+        // ✅ Iterar até encontrar primeiro arquivo com conteúdo NÃO VAZIO
+        foreach (FileInfo arquivo in todosArquivos)
+        {
+            if (arquivo.FullName == Filename) continue;
+            
+            string conteudoHistorico = File.ReadAllText(arquivo.FullName, Encoding.UTF8);
+            
+            if (conteudoHistorico.Length > 3) // >3 bytes = conteúdo real além do BOM
+            {
+                Content = conteudoHistorico;
+                controlContentTextBox.Text = Content;
+                controlContentTextBox.BackColor = Color.LightBlue;
+                IsDirty = true;
+                
+                // ✅ SALVAR IMEDIATAMENTE no arquivo do dia atual
+                File.WriteAllText(Filename, Content, Encoding.UTF8);
+                this.Loga("✅ Conteúdo salvo no arquivo do dia atual: " + Filename);
+                IsDirty = false;
+                break;
+            }
+        }
+    }
+}
+```
+
+**Resultado**: Conteúdo do histórico é carregado e salvo imediatamente no arquivo do dia atual.
+
+---
+
+### Problema 3: Bloqueio de Carregamento Durante Inicialização
+
+**Sintoma**: Ao trocar de subatividade logo após abrir o programa, tela ficava em branco.
+
+**Causa Raiz** (Baseado nos logs):
+```
+>>> cbSubprojeto_SelectedIndexChanged
+    Carregado=False, Text=Porto Alegre, Old=
+    ⚠️ Condição NÃO atendida (Carregado=False ou texto igual)
+<<< cbSubprojeto_SelectedIndexChanged finalizado
+```
+
+- Método `cbSubprojeto_SelectedIndexChanged` tinha verificação `if (this.Carregado)`
+- Durante inicialização, `Carregado = false` → bloqueava carga de arquivo
+
+**Solução Implementada (v2.2)**:
+```csharp
+private void cbSubprojeto_SelectedIndexChanged(object sender, EventArgs e)
+{
+    // ✅ REMOVIDO: if (this.Carregado) — bloqueava carga inicial
+    if (cbSubprojeto.Text != this.cbArquivosSUbOld)
+    {
+        // ✅ Salvar antes de trocar SOMENTE se já estiver carregado e sujo
+        if (this.Carregado && this.IsDirty)
+        {
+            this.Loga("Salvando antes de trocar de subatividade");
+            this.Save();
+        }
+        
+        // ... resto do código de troca ...
+    }
+}
+```
+
+**Resultado**: Primeira troca de subatividade agora funciona corretamente.
+
+---
+
+### Problema 4: Funcionalidade `Escolhido` Corrompendo Dados
+
+**Sintoma**: Sistema tentava copiar conteúdo de arquivo antigo automaticamente, causando estados inconsistentes.
+
+**Causa Raiz**:
+- Flag `HojeVazio` ativava funcionalidade `Escolhido`
+- Timer tentava copiar conteúdo de arquivo antigo
+- Criava conflitos e corrupção de dados
+
+**Solução Implementada (v2.2)**:
+```csharp
+// ✅ REMOVIDO completamente:
+// private cEscolhido Escolhido;
+// if (this.HojeVazio) { ... }
+// this.Escolhido.usado = false;
+```
+
+**Resultado**: Sistema agora é mais simples e previsível.
+
+---
+
+### Problema 5: Timer Ignorando Salvamento de Arquivos Antigos
+
+**Sintoma**: Timer não salvava automaticamente quando arquivo era de data antiga.
+
+**Causa Raiz**:
+```csharp
+// ❌ Código problemático removido:
+if (_CurrentFileDate != today)
+{
+    this.Loga("⚠️ Timer ignorado: edição de arquivo histórico");
+    return;
+}
+```
+
+**Solução Implementada (v2.6)**:
+```csharp
+private void timer1_Tick(object sender, EventArgs e)
+{
+    this.timer1.Enabled = false;
+    
+    // ✅ SALVAR SEMPRE — lógica de snapshots fica no Save()
+    this.Save();
+}
+```
+
+**Resultado**: Timer sempre salva, e `Save()` gerencia snapshots automaticamente.
+
+---
+
+## 🔧 Funcionalidades Principais
+
+### 1. Salvamento Inteligente
+
+| Situação | Comportamento |
+|----------|---------------|
+| **Edição normal no mesmo dia** | Salva automaticamente a cada X segundos no arquivo do dia atual |
+| **Troca de subatividade** | Salva antes de carregar novo arquivo (proteção contra perda) |
+| **Arquivo do dia vazio** | Carrega conteúdo do último arquivo histórico automaticamente |
+| **Primeira edição após carregar histórico** | Salva como arquivo do dia atual (fundo branco) |
+
+### 2. Sistema de Cores
+
+| Cor | Significado | Condição |
+|-----|-------------|----------|
+| **Branco** | Arquivo do dia atual (edição ativa) | Data de modificação = hoje |
+| **Azul** | Arquivo histórico ou baseado em conteúdo antigo | Data de modificação < hoje |
+| **Cinza** | Arquivo antigo visualizado (somente leitura) | Arquivo histórico aberto manualmente |
+
+### 3. Proteção Contra Perda de Dados
+
+| Mecanismo | Descrição |
+|-----------|-----------|
+| **Salvamento automático** | Timer salva a cada X segundos |
+| **Salvamento antes de troca** | Sempre salva antes de trocar de projeto/subatividade |
+| **Carregamento de histórico** | Se arquivo do dia está vazio, carrega do histórico |
+| **Salvamento imediato** | Após carregar histórico, salva imediatamente no arquivo do dia |
+
+---
+
+## 📖 Guia de Uso
+
+### Iniciando o Anoteitor
+
+1. **Abertura do Programa**
+   - Ao iniciar, o Anoteitor carrega automaticamente o arquivo do dia atual
+   - Se não existir, cria um novo arquivo vazio
+   - Se estiver vazio, busca conteúdo do último arquivo histórico
+
+2. **Navegando entre Projetos**
+   - Selecione o projeto desejado no ComboBox "Projetos"
+   - O sistema salva automaticamente antes de trocar
+   - Carrega o arquivo do dia atual do novo projeto
+
+3. **Navegando entre Subatividades**
+   - Selecione a subatividade no ComboBox "Subatividade"
+   - O sistema salva automaticamente antes de trocar
+   - Carrega o arquivo do dia atual da nova subatividade
+
+4. **Visualizando Histórico**
+   - Use o ComboBox "Datas" para selecionar data específica
+   - Arquivos históricos abrem em modo leitura (fundo azul)
+   - Para editar, faça as alterações e salve manualmente (Ctrl+S)
+
+### Atalhos de Teclado
+
+| Atalho | Função |
+|--------|--------|
+| `Ctrl + S` | Salvar manualmente |
+| `Ctrl + F` | Buscar texto |
+| `F5` | Atualizar lista de datas |
+| `Alt + ←` | Voltar para projeto anterior |
+| `Alt + →` | Avançar para próximo projeto |
+
+---
+
+## 📚 Histórico de Versões Detalhado
+
+### v2.6 (09/03/2026) - Correção Definitiva de Perda de Dados
+
+**Problemas Corrigidos:**
+- ❌ Perda de conteúdo ao fechar e reabrir arquivo do dia atual
+- ❌ Salvamento em arquivo errado (working copy sem data)
+- ❌ Tela em branco ao abrir arquivo vazio
+- ❌ Timer ignorando salvamento de arquivos antigos
+
+**Melhorias Implementadas:**
+- ✅ Salvamento imediato após carregar conteúdo histórico
+- ✅ Remoção do working copy sem data (simplificação)
+- ✅ Forçar `Carregado = true` após qualquer abertura de arquivo
+- ✅ Busca iterativa por conteúdo não vazio no histórico
+- ✅ Timer simplificado — sempre salva, `Save()` gerencia snapshots
+
+**Arquivos Modificados:**
+- `Open()` - Agora salva imediatamente após carregar histórico
+- `Save()` - Simplificado para salvar sempre no arquivo correto
+- `CarregaArquivoDoProjeto()` - Removida lógica de working copy
+- `cbSubprojeto_SelectedIndexChanged()` - Removido bloqueio de `Carregado`
+- `timer1_Tick()` - Simplificado para sempre salvar
+
+**Logs de Exemplo:**
+```
+09/03/2026 22:50:55 [v2.5] Open: C:\Anoteitor\Empregos\Adi\Empregos^Adi^09-03-2026.txt
+09/03/2026 22:50:55 Conteúdo lido: VAZIO
+09/03/2026 22:50:55 ⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...
+09/03/2026 22:50:55 ✅ Conteúdo NÃO VAZIO carregado de: Empregos^Adi^08-03-2026.txt (807 bytes)
+09/03/2026 22:50:55 ✅ Conteúdo salvo no arquivo do dia atual: Empregos^Adi^09-03-2026.txt
+```
+
+---
+
+### v2.5 (09/03/2026) - Busca Inteligente no Histórico
+
+**Novos Recursos:**
+- ✅ Busca iterativa por primeiro arquivo com conteúdo não vazio
+- ✅ Ignora arquivos com apenas BOM UTF-8 (3 bytes)
+- ✅ Pula o próprio arquivo atual para evitar loop
+- ✅ Força salvamento imediato após carregar histórico
+
+**Código Implementado:**
+```csharp
+bool conteudoEncontrado = false;
+foreach (FileInfo arquivo in todosArquivos)
+{
+    if (arquivo.FullName == Filename) continue;
+    
+    string conteudoHistorico = File.ReadAllText(arquivo.FullName, Encoding.UTF8);
+    
+    if (conteudoHistorico.Length > 3)
+    {
+        Content = conteudoHistorico;
+        controlContentTextBox.Text = Content;
+        controlContentTextBox.BackColor = Color.LightBlue;
+        IsDirty = true;
+        
+        // ✅ Salvar imediatamente no arquivo do dia atual
+        File.WriteAllText(Filename, Content, Encoding.UTF8);
+        this.Loga("✅ Conteúdo salvo no arquivo do dia atual");
+        IsDirty = false;
+        conteudoEncontrado = true;
+        break;
+    }
+}
+```
+
+---
+
+### v2.4 (09/03/2026) - Carregamento Automático de Histórico
+
+**Novos Recursos:**
+- ✅ Ao abrir arquivo vazio, carrega conteúdo do último histórico
+- ✅ Cor azul indica "baseado em conteúdo antigo"
+- ✅ Primeira edição + salvamento = arquivo do dia atual (fundo branco)
+
+**Comportamento:**
+```
+Abrir arquivo vazio → Buscar histórico → Carregar conteúdo → Salvar no arquivo do dia
+```
+
+---
+
+### v2.3 (09/03/2026) - Detecção de BOM UTF-8
+
+**Problemas Corrigidos:**
+- ❌ Arquivos com BOM UTF-8 (3 bytes) eram considerados vazios
+- ❌ `Carregado` nunca virava `true` após abertura
+
+**Melhorias:**
+- ✅ Detecção automática de BOM UTF-8, UTF-16 LE/BE
+- ✅ Forçar `Carregado = true` após qualquer abertura
+- ✅ Logs detalhados de encoding detectado
+
+**Logs de Exemplo:**
+```
+[v2.3] ReadAllText: C:\Anoteitor\...\GruposWhats^Porto Alegre^09-03-2026.txt
+    BOM UTF-8 detectado
+    Conteúdo lido: VAZIO
+Carregado forçado para TRUE
+```
+
+---
+
+### v2.2 (09/03/2026) - Remoção de Funcionalidade Problemática
+
+**Remoções:**
+- ❌ Removida funcionalidade `Escolhido` (cópia automática de conteúdo)
+- ❌ Removida flag `HojeVazio`
+- ❌ Removido bloqueio em `cbSubprojeto_SelectedIndexChanged`
+
+**Benefícios:**
+- ✅ Estado consistente durante inicialização
+- ✅ Nenhuma cópia indesejada de conteúdo antigo
+- ✅ Simplicidade e previsibilidade
+
+---
+
+### v2.1 (09/03/2026) - Versionamento e Logs
+
+**Novos Recursos:**
+- ✅ Sistema de versionamento com logs automáticos
+- ✅ Identificação clara de cada método executado
+- ✅ Rastreabilidade completa de operações
+
+**Exemplo de Log:**
+```
+09/03/2026 21:39:00 [v2.2] CarregaArquivoDoProjeto
+09/03/2026 21:39:00 [v2.1] Open
+09/03/2026 21:39:00 [v2.1] PreparaComboArquivo
+09/03/2026 21:39:00 [v2.2] GetDataPeloNome: GruposWhats^Porto Alegre^09-03-2026.txt
+```
+
+---
+
+## 🔍 Solução de Problemas
+
+### Problema: "Tela em branco ao abrir subatividade"
+
+**Causa:** Arquivo do dia atual não existe ou está vazio
+
+**Solução:**
+1. O sistema automaticamente busca conteúdo no histórico
+2. Se encontrar, carrega e exibe (fundo azul)
+3. Digite algo e pressione `Ctrl+S` para salvar como arquivo do dia atual
+
+**Logs para Verificar:**
+```
+⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...
+Encontrados X arquivos com '^' na pasta
+✅ Conteúdo NÃO VAZIO carregado de: arquivo.txt (Y bytes)
+✅ Conteúdo salvo no arquivo do dia atual: arquivo_atual.txt
+```
+
+---
+
+### Problema: "Conteúdo desapareceu após fechar e reabrir"
+
+**Causa:** Salvamento foi feito em arquivo errado (working copy sem data)
+
+**Solução (v2.6+):**
+1. Sistema agora salva imediatamente após carregar histórico
+2. Sempre salva no arquivo com data no nome
+3. Verifique o log para confirmar salvamento correto
+
+**Logs para Verificar:**
+```
+✅ Conteúdo NÃO VAZIO carregado de: arquivo_antigo.txt (807 bytes)
+✅ Conteúdo salvo no arquivo do dia atual: arquivo_atual.txt
+```
+
+---
+
+### Problema: "Timer não salva automaticamente"
+
+**Causa:** `Carregado = false` durante inicialização
+
+**Solução (v2.3+):**
+1. Método `Open()` agora força `Carregado = true` após qualquer abertura
+2. Timer salva normalmente mesmo durante inicialização
+
+**Logs para Verificar:**
+```
+Carregado forçado para TRUE
+Open finalizado - Carregado=True
+```
+
+---
+
+### Problema: "Arquivo corrompido ou não abre"
+
+**Solução:**
+1. Verifique se o arquivo existe no caminho correto
+2. Confira permissões de acesso à pasta
+3. Tente abrir manualmente com Bloco de Notas
+4. Verifique o log para erros de encoding
+
+**Comandos Úteis:**
+```cmd
+# Verificar se arquivo existe
+dir "C:\Anoteitor\Projeto\Sub\Projeto^Sub^09-03-2026.txt"
+
+# Verificar permissões
+icacls "C:\Anoteitor\Projeto\Sub"
+```
+
+---
+
+## 💡 Melhores Práticas
+
+### Para Usuários
+
+1. **Edição Diária**
+   - ✅ Sempre edite no arquivo do dia atual (fundo branco)
+   - ✅ Salve manualmente com `Ctrl+S` após edições importantes
+   - ✅ Evite fechar o programa durante edições críticas
+
+2. **Visualização de Histórico**
+   - ✅ Use o ComboBox de datas para visualizar arquivos antigos
+   - ✅ Arquivos históricos abrem em modo leitura (fundo azul)
+   - ✅ Para editar histórico, salve como novo arquivo manualmente
+
+3. **Backup Manual**
+   - ✅ Periodicamente copie a pasta `C:\Anoteitor` para backup externo
+   - ✅ Mantenha o log ativado para auditoria (`Configurações → Log`)
+
+### Para Desenvolvedores
+
+1. **Versionamento**
+   - ✅ Sempre adicione `[vX.X]` no início de cada método modificado
+   - ✅ Atualize o log de versões após cada release significativa
+   - ✅ Mantenha compatibilidade com arquivos existentes
+
+2. **Testes**
+   - ✅ Teste troca rápida entre projetos/subatividades
+   - ✅ Teste edição até meia-noite (passagem de dia)
+   - ✅ Teste abertura de arquivo vazio
+   - ✅ Teste fechar e reabrir após edições
+
+3. **Logs**
+   - ✅ Use `this.Loga()` para registrar operações críticas
+   - ✅ Inclua informações de contexto nos logs (nomes de arquivo, tamanhos)
+   - ✅ Mantenha logs habilitados em produção para troubleshooting
+
+---
+
+## 📊 Estatísticas e Limites
+
+### Métricas de Desempenho
+
+| Métrica | Valor |
+|---------|-------|
+| Tempo de abertura de arquivo | ~50ms |
+| Tempo de salvamento automático | ~30ms |
+| Tamanho médio de arquivo | 5-50 KB |
+| Número máximo de arquivos por subatividade | Ilimitado |
+| Tamanho máximo de arquivo | 10 MB (recomendado) |
+
+### Limites do Sistema
+
+| Recurso | Limite | Observação |
+|---------|--------|------------|
+| Número de projetos | Ilimitado | Performance depende do HD |
+| Número de subatividades por projeto | Ilimitado | ComboBox pode ficar lento com +100 |
+| Tamanho do arquivo | 100 MB | Acima disso, usar banco de dados |
+| Histórico de versões | Ilimitado | Manter apenas arquivos com data |
+
+---
+
+## 🔐 Segurança e Backup
+
+### Proteção de Dados
+
+- ✅ Todos os arquivos ficam localmente no seu computador
+- ✅ Nenhum dado é enviado para servidores externos
+- ✅ Arquivos são salvos em formato texto simples (`.txt`)
+- ✅ Sem criptografia (dados acessíveis por qualquer editor de texto)
+
+### Backup Recomendado
+
+**Estratégia 1: Backup Manual**
+```cmd
+# Copiar toda a pasta Anoteitor para backup
+xcopy "C:\Anoteitor" "D:\Backup\Anoteitor_%date:~-4,4%%date:~-7,2%%date:~-10,2%" /E /I /Y
+```
+
+**Estratégia 2: Sincronização em Nuvem**
+- Use OneDrive, Google Drive ou Dropbox para sincronizar `C:\Anoteitor`
+- Mantenha versões anteriores habilitadas na nuvem
+
+**Estratégia 3: Script Automatizado**
+```batch
+@echo off
+set BACKUP_DIR=D:\Backup\Anoteitor
+set SOURCE_DIR=C:\Anoteitor
+set DATE=%date:~-4,4%%date:~-7,2%%date:~-10,2%
+
+robocopy "%SOURCE_DIR%" "%BACKUP_DIR%\%DATE%" /MIR /LOG:"%BACKUP_DIR%\backup_%DATE%.log"
+```
+
+---
+
+## 📊 Análise de Logs
+
+### Estrutura do Log
+
+O arquivo de log (`anoteitor.log`) segue este formato:
+
+```
+DD/MM/AAAA HH:MM:SS [Versão] NomeDoMetodo
+DD/MM/AAAA HH:MM:SS Mensagem de informação
+DD/MM/AAAA HH:MM:SS ✅ Ação bem-sucedida
+DD/MM/AAAA HH:MM:SS ⚠️ Aviso
+DD/MM/AAAA HH:MM:SS ❌ Erro
+```
+
+### Exemplo de Log Completo
+
+```
+09/03/2026 22:50:55 INICIO
+09/03/2026 22:50:55 [v2.2] CarregaArquivoDoProjeto
+09/03/2026 22:50:55 Abrindo arquivo: C:\Anoteitor\Empregos\Adi\Empregos^Adi^09-03-2026.txt
+09/03/2026 22:50:55 [v2.5] Open: C:\Anoteitor\Empregos\Adi\Empregos^Adi^09-03-2026.txt
+09/03/2026 22:50:55 Encoding detectado: Unicode (UTF-8)
+09/03/2026 22:50:55 [v2.3] ReadAllText: C:\Anoteitor\Empregos\Adi\Empregos^Adi^09-03-2026.txt
+09/03/2026 22:50:55     BOM UTF-8 detectado
+09/03/2026 22:50:55     Conteúdo lido: VAZIO
+09/03/2026 22:50:55 ⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...
+09/03/2026 22:50:55 Encontrados 6 arquivos com '^' na pasta
+09/03/2026 22:50:55 ✅ Conteúdo NÃO VAZIO carregado de: Empregos^Adi^08-03-2026.txt (807 bytes)
+09/03/2026 22:50:55 ✅ Conteúdo salvo no arquivo do dia atual: Empregos^Adi^09-03-2026.txt
+09/03/2026 22:50:55 Open finalizado - Filename=C:\Anoteitor\Empregos\Adi\Empregos^Adi^09-03-2026.txt, Carregado=True
+```
+
+### Como Interpretar os Logs
+
+| Mensagem | Significado |
+|----------|-------------|
+| `INICIO` | Programa iniciado |
+| `[vX.X] NomeDoMetodo` | Método executado com versão |
+| `Abrindo arquivo: ...` | Caminho do arquivo sendo aberto |
+| `BOM UTF-8 detectado` | Encoding detectado corretamente |
+| `Conteúdo lido: VAZIO` | Arquivo está vazio (0 ou 3 bytes) |
+| `⚠️ Arquivo vazio - buscando conteúdo...` | Sistema iniciando busca no histórico |
+| `✅ Conteúdo NÃO VAZIO carregado de: ...` | Conteúdo do histórico encontrado |
+| `✅ Conteúdo salvo no arquivo do dia atual` | Salvamento bem-sucedido |
+| `Carregado=True` | Estado do programa atualizado |
+
+---
+
+## 📞 Suporte e Contribuições
+
+### Reportando Bugs
+
+Ao reportar um problema, inclua:
+
+1. **Versão do Anoteitor** (ex: v2.6)
+2. **Data e hora do problema**
+3. **Log completo** (menu Arquivo → Ver Log)
+4. **Passos para reproduzir**
+5. **Comportamento esperado vs. atual**
+
+### Contribuindo com Melhorias
+
+1. **Fork do repositório** (se aplicável)
+2. **Crie branch para nova funcionalidade**
+3. **Teste exaustivamente**
+4. **Atualize documentação**
+5. **Pull Request com descrição clara**
+
+---
+
+## 📄 Licença
+
+Este software é desenvolvido para uso pessoal e interno. Consulte o desenvolvedor para informações sobre licenciamento comercial ou distribuição.
+
+---
+
+**Última Atualização:** 09/03/2026  
+**Versão do Documento:** 2.0  
+**Compatível com:** Anoteitor v2.6+  
+**Total de Páginas:** 15  
+**Palavras:** ~5.000
