@@ -103,7 +103,7 @@ namespace Anoteitor
         public Main()
         {
             InitializeComponent();
-            this.Escolhido = new cEscolhido();
+            // this.Escolhido = new cEscolhido();
             Fun = new Funcoes();
 #if DEBUG
             this.TitAplicativo += " Em Debug";
@@ -202,38 +202,10 @@ namespace Anoteitor
             Console.WriteLine("timer1_Tick");
             this.timer1.Enabled = false;
 
-            Console.WriteLine("Nome.Length = " + Escolhido.Nome.Length.ToString());
-
-            // ✅ PROTEÇÃO: Não salva automaticamente arquivos históricos
-            string today = Fun.Agora().ToShortDateString().Replace(@"/", "-");
-            if (_CurrentFileDate != today)
-            {
-                this.Loga($"⚠️ Timer ignorado: edição de arquivo histórico ({_CurrentFileDate})");
-                toolStripStatusLabel1.Text = "⚠️ Salvamento automático desativado para arquivos históricos";
-                return;
-            }
-
-            if (this.Escolhido.usado == false)
-            {
-                if (this.Escolhido.Nome.Length > 0)
-                {
-                    this.Escolhido.usado = true;
-                    string Arquivo = this.Filename;
-                    string Titulo = this.Text;
-                    this.Open(this.Escolhido.Nome);
-                    this.timer1.Interval = this.Segundos * 1000;
-                    string sCopia = this.Text;
-                    this.Text = Titulo;
-                    this.Filename = Arquivo;
-                    toolStripStatusLabel1.Text = "Cópia de : " + sCopia.Substring(0, sCopia.Length - 12);
-                }
-            }
-            else
-            {
-                // ✅ Apenas salva (sem alterar Filename ou Data)
-                this.Save();
-            }
+            // ✅ SALVAR SEMPRE — lógica de snapshots fica no Save()
+            this.Save();
         }
+
         private void Loga(string texto)
         {
 #if DEBUG
@@ -576,7 +548,6 @@ namespace Anoteitor
         private bool Save()
         {
             if (!IsDirty) return true;
-
             int Tam = Content.Length;
             if (Tam < 1)
             {
@@ -586,184 +557,54 @@ namespace Anoteitor
 
             toolStripStatusLabel1.Text = "Salvando arquivo";
 
-            // ✅ Detectar se estamos editando o arquivo do dia atual
-            string today = Fun.Agora().ToShortDateString().Replace(@"/", "-");
-            bool isEditingToday = (_CurrentFileDate == today);
+            // ✅ Sempre salvar no working copy (arquivo SEM data no nome)
+            string workingCopy = NomeDoArquivo("current");
+            string directory = Path.GetDirectoryName(workingCopy);
 
-            // ✅ Construir caminho do arquivo a ser salvo
-            string Atual = cIni.ReadString("Projetos", "Atual", "");
-            string SubAtiv = "";
-            if (cbSubprojeto.Visible && cbSubprojeto.Text != "GERAL")
-                SubAtiv = @"\" + cbSubprojeto.Text;
-
-            string Pasta = this.PastaGeral + @"\" + Atual + SubAtiv;
-            if (!Directory.Exists(Pasta))
-                Directory.CreateDirectory(Pasta);
-
-            // ✅ Se é arquivo histórico, salva NELE MESMO (não muda de data)
-            string targetFilePath;
-            if (isEditingToday)
-            {
-                // Salva no arquivo do dia atual
-                targetFilePath = NomeDoArquivo(today);
-                this.Filename = targetFilePath; // Atualiza Filename para o dia atual
-            }
-            else
-            {
-                // Salva no mesmo arquivo histórico (sem mudança de data)
-                targetFilePath = this.Filename;
-            }
+            if (!Directory.Exists(directory))
+                Directory.CreateDirectory(directory);
 
             try
             {
-                File.WriteAllText(targetFilePath, Content, _encoding ?? Encoding.UTF8);
-                IsDirty = false;
+                // ✅ Antes de salvar, verificar se working copy é de data antiga
+                string today = Fun.Agora().ToShortDateString().Replace(@"/", "-");
+                if (File.Exists(workingCopy))
+                {
+                    DateTime lastWrite = File.GetLastWriteTime(workingCopy);
+                    string lastWriteDate = lastWrite.ToString("dd-MM-yyyy");
 
-                this.Loga("Arquivo salvo: " + targetFilePath + " (" + Tam.ToString() + " bytes)");
+                    // Se working copy é de data antiga, criar snapshot ANTES de sobrescrever
+                    if (lastWriteDate != today)
+                    {
+                        string historicPath = NomeDoArquivo(lastWriteDate);
+                        if (!File.Exists(historicPath))
+                        {
+                            File.Copy(workingCopy, historicPath);
+                            this.Loga($"Snapshot preservado: {historicPath}");
+                        }
+                    }
+                }
+
+                // ✅ Salvar no working copy
+                File.WriteAllText(workingCopy, Content, _encoding ?? Encoding.UTF8);
+                IsDirty = false;
+                this.Filename = workingCopy;
+                this.Loga("Working copy salvo: " + workingCopy + " (" + Tam.ToString() + " bytes)");
                 string HoraSalva = Fun.Agora().ToString(@"hh\:mm\:ss");
                 toolStripStatusLabel1.Text = "Gravado às : " + HoraSalva;
-
-                // ✅ Atualizar UI apenas se for arquivo do dia atual
-                if (isEditingToday)
-                {
-                    this.Text = Path.GetFileName(targetFilePath) + " - " + this.TitAplicativo;
-                    this.AjustaCorFundo();
-                }
+                this.AjustaCorFundo();
             }
             catch (Exception ex)
             {
-                this.Loga($"❌ Erro ao salvar arquivo: {ex.Message}");
-                MessageBox.Show(
-                    $"Erro ao salvar:\n{targetFilePath}\n\n{ex.Message}",
-                    this.TitAplicativo,
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
+                this.Loga($"❌ Erro ao salvar: {ex.Message}");
+                MessageBox.Show($"Erro ao salvar:\n{workingCopy}\n\n{ex.Message}",
+                               this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }
 
             return true;
         }
 
-        //private bool ValidateContent()
-        //{
-        //    int length = Content.Length;
-        //    if (length < 1)
-        //    {
-        //        this.Loga("Ia salvar vazio");
-        //        return false;
-        //    }
-        //    return true;
-        //}
-
-        //private string BuildDirectoryPath()
-        //{
-        //    // ✅ Retorna APENAS o caminho da PASTA (sem nome do arquivo!)
-        //    string currentProject = cIni.ReadString("Projetos", "Atual", "");
-        //    string subProject = cbSubprojeto.Visible && cbSubprojeto.Text != "GERAL" ? @"\" + cbSubprojeto.Text : "";
-        //    return Path.Combine(this.PastaGeral, currentProject, subProject.TrimStart('\\'));
-        //}
-
-        //private string BuildFilePath()
-        //{
-        //    // ✅ Retorna caminho COMPLETO do arquivo
-        //    string directory = BuildDirectoryPath();
-        //    string fileName = Path.GetFileName(this.Filename);
-        //    return Path.Combine(directory, fileName);
-        //}
-
-        //private bool ValidateFileContext(string filePath)
-        //{
-        //    string today = Fun.Agora().ToShortDateString().Replace(@"/", "-");
-
-        //    // Se estamos editando o arquivo do dia atual, não há necessidade de ação extra
-        //    if (_CurrentFileDate == today)
-        //        return true;
-
-        //    // Estamos editando um arquivo de data diferente → precisa salvar snapshot antes
-        //    try
-        //    {
-        //        // Salva o conteúdo atual no arquivo da data original (snapshot)
-        //        string historicPath = NomeDoArquivo(_CurrentFileDate);
-        //        File.WriteAllText(historicPath, Content, _encoding ?? Encoding.UTF8);
-        //        this.Loga($"Snapshot salvo: {historicPath}");
-
-        //        // Atualiza para trabalhar com o dia atual
-        //        _CurrentFileDate = today;
-        //        this.Filename = NomeDoArquivo(today); // Atualiza Filename para o arquivo do dia
-
-        //        // Atualiza UI
-        //        this.Text = Path.GetFileName(this.Filename) + " - " + this.TitAplicativo;
-        //        this.AjustaCorFundo();
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        this.Loga($"⚠️ Erro ao salvar snapshot da data anterior ({_CurrentFileDate}): {ex.Message}");
-        //        // Não interrompe — continua salvando no arquivo do dia atual
-        //    }
-
-        //    return true;
-        //}
-
-        //private void HandleInvalidContext(string expectedFilename)
-        //{
-        //    string errorMessage = "⚠️ ATENÇÃO: Contexto inválido para salvamento!\n\n" +
-        //                          $"Arquivo atual: {Path.GetFileName(this.Filename)}\n" +
-        //                          $"Esperado: {Path.GetFileName(expectedFilename)}\n\n" +
-        //                          "O conteúdo será salvo como cópia de segurança para não perder dados.\n\n" +
-        //                          "Deseja ver o log para investigar?";
-
-        //    DialogResult response = MessageBox.Show(errorMessage, this.TitAplicativo, MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-
-        //    string backupPath = Path.Combine(Path.GetDirectoryName(this.Filename),
-        //                                    "backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
-
-        //    try
-        //    {
-        //        File.WriteAllText(backupPath, Content);
-        //        this.Loga($"⚠️ Backup criado: {backupPath}");
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        MessageBox.Show($"Erro ao criar backup: {ex.Message}", this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Error);
-        //    }
-
-        //    this.Loga($"⚠️ ERRO: Contexto inválido. Filename atual: {this.Filename}");
-        //    this.Loga($"    Filename esperado: {expectedFilename}");
-        //    this.Loga($"    Atual: {this.Atual}");
-        //    this.Loga($"    SUbAtual: {this.SUbAtual}");
-        //    this.Loga($"    Content.Length: {Content.Length}");
-
-        //    if (response == DialogResult.Yes && this.Logar)
-        //    {
-        //        try { System.Diagnostics.Process.Start("notepad.exe", this.NomeLog); }
-        //        catch (Exception ex) { MessageBox.Show($"Erro ao abrir o log: {ex.Message}", this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Error); }
-        //    }
-        //}
-
-        //private void SaveFile(string path)
-        //{
-        //    try
-        //    {
-        //        File.WriteAllText(path, Content, _encoding ?? Encoding.UTF8);
-        //        IsDirty = false;
-        //        this.Loga("Arquivo salvo: " + path + " (" + Content.Length.ToString() + " bytes)");
-        //        string saveTime = Fun.Agora().ToString(@"hh\:mm\:ss");
-        //        toolStripStatusLabel1.Text = "Gravado às: " + saveTime;
-        //        this.AjustaCorFundo();
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        this.Loga($"❌ Erro ao salvar arquivo: {ex.Message}");
-        //        MessageBox.Show(
-        //            $"Erro ao salvar:\n{path}\n\n{ex.Message}",
-        //            this.TitAplicativo,
-        //            MessageBoxButtons.OK,
-        //            MessageBoxIcon.Error
-        //        );
-        //        // Mantém IsDirty = true para tentar novamente
-        //    }
-        //}
         #endregion
 
         // Save FIM
@@ -793,49 +634,110 @@ namespace Anoteitor
 
         public void Open(string pFilename, string searchText = null, Encoding encoding = null, bool ativar = false)
         {
-            var Filename = pFilename;
+            this.Loga("[v2.5] Open: " + pFilename);
 
+            var Filename = pFilename;
             Console.WriteLine("Abrindo " + Filename);
 
+            // ✅ Criar arquivo se não existir
             if (!File.Exists(Filename))
             {
-                Console.WriteLine("Não existe o arquivo");
-                var FileExists = false;
+                Console.WriteLine("Arquivo não existe - criando novo");
                 var Extension = Path.GetExtension(Filename);
-                if (Extension == "")
+                if (string.IsNullOrEmpty(Extension))
                 {
-                    Filename = Filename + ".txt";
-                    FileExists = File.Exists(Filename);
+                    Filename += ".txt";
                 }
 
-                if (!FileExists)
-                {
-                    if (this.Escolhido.Nome.Length > 0)
-                    {
-                        this.Escolhido.usado = false;
-                        this.timer1.Enabled = true;
-                    }
-                    controlContentTextBox.Text = "";
-                    controlContentTextBox.BackColor = SystemColors.ScrollBar;
-                    return;
-                }
+                string directory = Path.GetDirectoryName(Filename);
+                if (!Directory.Exists(directory))
+                    Directory.CreateDirectory(directory);
+
+                File.WriteAllText(Filename, "", Encoding.UTF8);
+                this.Loga("Arquivo criado: " + Filename);
             }
 
             #region Determine Encoding
-
             if (encoding == null)
-            { // generally this means it was not opened by a user using the open file dialog
+            {
                 using (var streamReader = new StreamReader(Filename, detectEncodingFromByteOrderMarks: true))
                 {
                     var text = streamReader.ReadToEnd();
                     _encoding = streamReader.CurrentEncoding;
+                    this.Loga("Encoding detectado: " + _encoding.EncodingName);
                 }
             }
-
             #endregion
 
             string sTemp = ReadAllText(Filename, encoding);
             Content = sTemp;
+            this.Loga("Conteúdo lido: " + (Content.Length > 0 ? Content.Length + " caracteres" : "VAZIO"));
+
+            // ✅ SE arquivo está vazio (só BOM ou 0 bytes), buscar conteúdo não vazio no histórico
+            if (Content.Length == 0)
+            {
+                this.Loga("⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...");
+                string pasta = Path.GetDirectoryName(Filename);
+
+                try
+                {
+                    DirectoryInfo dir = new DirectoryInfo(pasta);
+                    if (dir.Exists)
+                    {
+                        // Buscar TODOS os arquivos .txt com ^ no nome
+                        FileInfo[] todosArquivos = dir.GetFiles("*^*.txt")
+                            .OrderByDescending(f => f.LastWriteTime) // Mais recente primeiro
+                            .ToArray();
+
+                        this.Loga($"Encontrados {todosArquivos.Length} arquivos com '^' na pasta");
+
+                        // ✅ Iterar até encontrar primeiro arquivo com conteúdo NÃO VAZIO
+                        bool conteudoEncontrado = false;
+                        foreach (FileInfo arquivo in todosArquivos)
+                        {
+                            // Pular o próprio arquivo atual (evita loop infinito)
+                            if (arquivo.FullName == Filename) continue;
+
+                            // Verificar se tem data válida no nome (evita arquivos corrompidos)
+                            if (!System.Text.RegularExpressions.Regex.IsMatch(arquivo.Name, @"\d{2}-\d{2}-\d{4}\.txt$"))
+                                continue;
+
+                            // Ler conteúdo do arquivo histórico
+                            string conteudoHistorico = File.ReadAllText(arquivo.FullName, Encoding.UTF8);
+
+                            // ✅ Verificar se conteúdo é REALMENTE não vazio (ignorar BOM de 3 bytes)
+                            if (conteudoHistorico.Length > 3) // >3 bytes = conteúdo real além do BOM
+                            {
+                                Content = conteudoHistorico;
+                                controlContentTextBox.Text = Content;
+                                controlContentTextBox.BackColor = Color.LightBlue; // Azul = baseado em histórico
+                                IsDirty = true; // Força salvamento na primeira edição
+                                this.Loga($"✅ Conteúdo NÃO VAZIO carregado de: {arquivo.Name} ({Content.Length} bytes)");
+                                conteudoEncontrado = true;
+                                break;
+                            }
+                            else
+                            {
+                                this.Loga($"⚠️ Arquivo ignorado (vazio/BOM apenas): {arquivo.Name} ({conteudoHistorico.Length} bytes)");
+                            }
+                        }
+
+                        if (!conteudoEncontrado)
+                        {
+                            this.Loga("ℹ️ Nenhum arquivo com conteúdo não vazio encontrado - mantendo arquivo limpo");
+                            controlContentTextBox.BackColor = SystemColors.Window; // Branco = novo arquivo
+                        }
+                    }
+                    else
+                    {
+                        this.Loga("⚠️ Pasta não existe: " + pasta);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    this.Loga("❌ Erro ao buscar conteúdo histórico: " + ex.Message);
+                }
+            }
 
             if (!string.IsNullOrEmpty(searchText))
             {
@@ -844,10 +746,7 @@ namespace Anoteitor
                 {
                     controlContentTextBox.SelectionStart = index;
                     controlContentTextBox.SelectionLength = searchText.Length;
-                    if (ativar)
-                    {
-                        controlContentTextBox.Focus();
-                    }
+                    if (ativar) controlContentTextBox.Focus();
                     controlContentTextBox.ScrollToCaret();
                 }
             }
@@ -856,58 +755,87 @@ namespace Anoteitor
                 SelectionStart = 0;
             }
 
-            // ✅ Etapa 6: Definir _CurrentFileDate com base no nome do arquivo
             this.Filename = Filename;
-            string extractedDate = Helper.ExtractDateFromFileName(Path.GetFileName(Filename));
-            if (extractedDate == "Data desconhecida")
-            {
-                // Arquivo sem data no nome → assume data de hoje
-                _CurrentFileDate = Fun.Agora().ToShortDateString().Replace(@"/", "-");
-            }
-            else
-            {
-                // Arquivo histórico → usa a data extraída do nome
-                _CurrentFileDate = extractedDate;
-            }
-
             IsDirty = false;
             toolStripStatusLabel1.Text = "";
             this.AjustaCorFundo();
             this.QtMinutosEsse = 0;
             this.QtMinutos = cIni.ReadInt(Atual, "Tempo", 0);
             this.MotraCaracteres();
+
+            // ✅ FORÇAR Carregado = true após qualquer abertura
+            this.Carregado = true;
+            this.Loga("Open finalizado - Filename=" + this.Filename + ", Carregado=" + this.Carregado + ", Tamanho=" + Content.Length);
         }
 
         private void AjustaCorFundo()
         {
-            string Data = Fun.Agora().ToShortDateString().Replace(@"/", "-");
-            if (this.Filename.IndexOf(Data) > 0)
-                controlContentTextBox.BackColor = SystemColors.Window;
-            else
-                controlContentTextBox.BackColor = SystemColors.GradientInactiveCaption;
+            try
+            {
+                if (!File.Exists(this.Filename))
+                {
+                    controlContentTextBox.BackColor = SystemColors.Window; // Branco
+                    return;
+                }
+
+                // ✅ Usar DATA DE MODIFICAÇÃO, não nome do arquivo
+                DateTime lastWrite = File.GetLastWriteTime(this.Filename);
+                string lastWriteDate = lastWrite.ToString("dd-MM-yyyy");
+                string today = Fun.Agora().ToShortDateString().Replace(@"/", "-");
+
+                if (lastWriteDate == today)
+                    controlContentTextBox.BackColor = SystemColors.Window; // Branco = hoje
+                else
+                    controlContentTextBox.BackColor = Color.LightBlue; // Azul = arquivo antigo
+            }
+            catch
+            {
+                controlContentTextBox.BackColor = SystemColors.Window; // Fallback branco
+            }
         }
 
-        private static string ReadAllText(string pFilename, Encoding encoding)
+        private string ReadAllText(string path, Encoding encoding = null)
         {
-            using (var FileStream = new FileStream(pFilename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            this.Loga("[v2.3] ReadAllText: " + path);
+
+            if (!File.Exists(path))
             {
-                if (encoding == null)
+                this.Loga("    Arquivo não existe");
+                return "";
+            }
+
+            byte[] bom = new byte[3];
+            using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read))
+            {
+                int bytesRead = fs.Read(bom, 0, 3);
+                fs.Seek(0, SeekOrigin.Begin);
+
+                // Detectar BOM
+                if (bytesRead >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
                 {
-                    using (var StreamReader = new StreamReader(FileStream))
-                    {
-                        var text = StreamReader.ReadToEnd();
-                        return text;
-                    }
+                    encoding = Encoding.UTF8;
+                    this.Loga("    BOM UTF-8 detectado");
+                }
+                else if (bytesRead >= 2 && bom[0] == 0xFF && bom[1] == 0xFE)
+                {
+                    encoding = Encoding.Unicode;
+                    this.Loga("    BOM UTF-16 LE detectado");
+                }
+                else if (bytesRead >= 2 && bom[0] == 0xFE && bom[1] == 0xFF)
+                {
+                    encoding = Encoding.BigEndianUnicode;
+                    this.Loga("    BOM UTF-16 BE detectado");
                 }
                 else
                 {
-                    using (var StreamReader = new StreamReader(FileStream, encoding, false))
-                    {
-                        var text = StreamReader.ReadToEnd();
-                        return text;
-                    }
+                    encoding = Encoding.Default; // ANSI/ASCII
+                    this.Loga("    Sem BOM - usando encoding padrão");
                 }
             }
+
+            string content = File.ReadAllText(path, encoding);
+            this.Loga("    Conteúdo lido: " + (content.Length > 0 ? content.Length + " caracteres" : "VAZIO"));
+            return content;
         }
 
         private void UpdateTitle()
@@ -1594,18 +1522,24 @@ namespace Anoteitor
 
         private void CarregaArquivoDoProjeto(bool MarcarCarregado)
         {
+            this.Loga("[v2.2] CarregaArquivoDoProjeto");
+
             this.HojeVazio = false;
-            this.Carregado = false;
             controlContentTextBox.Clear();
+
             string Data = Fun.Agora().ToShortDateString().Replace(@"/", "-");
             this.Filename = NomeDoArquivo(Data);
+            this.Loga("Abrindo arquivo: " + this.Filename);
+
             this.Open(this.Filename);
-            this.Text = this.NomeArq + " - " + this.TitAplicativo + " " + this.Filename;
-            if (controlContentTextBox.Text.Length == 0)
-                if (cIni.ReadBool("Projetos", "CopiaOutroDia", false))
-                    this.HojeVazio = true;
-            this.Carregado = MarcarCarregado;            
+            this.Text = Path.GetFileName(this.Filename) + " - " + this.TitAplicativo;
+
+            // ✅ REMOVIDO: lógica de HojeVazio que ativava Escolhido
+            // O Open() já define Carregado = true
+
+            this.Loga("CarregaArquivoDoProjeto finalizado - Carregado=" + this.Carregado);
         }
+
 
         private void cbProjetos_DropDownClosed(object sender, EventArgs e)
         {
@@ -1638,77 +1572,89 @@ namespace Anoteitor
             this.PreparaComboArquivo(this.PastaGeral + @"\" + this.Atual + @"\" + this.SUbAtual);            
         }
 
-        private DateTime GetDataPeloNome(string Nome)
+        private DateTime GetDataPeloNome(string nomeArquivo)
         {
-            int TamNome = Nome.Length;
-            string sData = Nome.Substring(TamNome - 14, 10);            
-            int Dia = Convert.ToInt16(sData.Substring(0, 2));
-            int Mes = Convert.ToInt16(sData.Substring(3, 2));
-            int ANo = Convert.ToInt16(sData.Substring(6, 4)); ;
-            return new DateTime(ANo, Mes, Dia);
+            this.Loga("[v2.2] GetDataPeloNome: " + nomeArquivo);
+
+            try
+            {
+                // Extrair data do formato ^DD-MM-AAAA.txt
+                System.Text.RegularExpressions.Match match =
+                    System.Text.RegularExpressions.Regex.Match(nomeArquivo, @"\d{2}-\d{2}-\d{4}");
+
+                if (match.Success)
+                {
+                    DateTime data = DateTime.ParseExact(match.Value, "dd-MM-yyyy", null);
+                    this.Loga("Data extraída: " + data.ToShortDateString());
+                    return data;
+                }
+                else
+                {
+                    this.Loga("⚠️ Data não encontrada no nome, usando data mínima");
+                    return DateTime.MinValue;
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Loga("❌ Erro ao extrair data: " + ex.Message);
+                return DateTime.MinValue;
+            }
         }
 
         private void PreparaComboArquivo(string Pasta)
         {
+            this.Loga("[v2.1] PreparaComboArquivo");
+
             bool AdicionarOMais = false;
             if (this.mostrarSóDoDiaToolStripMenuItem.Checked == false)
             {
                 int LimArqs = cIni.ReadInt("Projetos", "LimArqs", 31);
-                this.Escolhido.usado = true;
                 int QtdArqs = 0;
                 List<DateTime> ArqsAdds = new List<DateTime>();
+
                 try
                 {
-                    DateTime MaisRecente = DateTime.Parse("01/01/2000");
                     DirectoryInfo info = new DirectoryInfo(Pasta);
-                    FileInfo[] arquivos = info.GetFiles().OrderBy(p => p.CreationTime).ToArray();
+                    if (!info.Exists)
+                    {
+                        Directory.CreateDirectory(Pasta);
+                        this.Loga("Pasta criada: " + Pasta);
+                    }
+
+                    FileInfo[] arquivos = info.GetFiles("*.txt").OrderBy(p => p.CreationTime).ToArray();
+
                     foreach (FileInfo arquivo in arquivos)
                     {
                         string nome = arquivo.Name;
                         DateTime data = this.GetDataPeloNome(nome);
-                        if (nome.IndexOf(this.Atual) > -1)
-                            if (ArqsAdds.Contains(data)==false)
-                            {
-                                ArqsAdds.Add(data);
-                                QtdArqs++;
-                                if (this.HojeVazio)
-                                    if (data > MaisRecente)
-                                    {
-                                        MaisRecente = data;
-                                        Escolhido.Nome = arquivo.FullName;
-                                        Escolhido.usado = false;
-                                    }
-                            }
+                        if (nome.IndexOf(this.Atual) > -1 && !ArqsAdds.Contains(data))
+                        {
+                            ArqsAdds.Add(data);
+                            QtdArqs++;
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    string Erro = ex.TargetSite.Name;
-                    switch (Erro)
-                    {
-                        case "WinIOError":
-                            Directory.CreateDirectory(Pasta);
-                            break;
-                        case "Parse":
-                            int x = 0;
-                            break;
-                        default:
-                            break;
-                    }
-
+                    this.Loga("Erro em PreparaComboArquivo: " + ex.Message);
                 }
+
                 cbArquivos.Visible = true;
                 int Ini = QtdArqs - LimArqs;
                 if (Ini < 0)
                     Ini = 0;
                 else
                     AdicionarOMais = true;
+
                 cbArquivos.Items.Clear();
                 ArqsAdds.Sort();
+
                 for (int i = Ini; i < QtdArqs; i++)
                     cbArquivos.Items.Add(ArqsAdds[i].ToShortDateString());
+
                 string Data = Fun.Agora().ToShortDateString();
                 int Pos = cbArquivos.Items.IndexOf(Data);
+
                 if (Pos > -1)
                     cbArquivos.SelectedIndex = Pos;
                 else
@@ -1717,14 +1663,35 @@ namespace Anoteitor
                     cbArquivos.Text = Data;
                 }
             }
+
             if (AdicionarOMais)
                 this.cbArquivos.Items.Add("TUDO");
-            if (this.Escolhido.Nome.Length > 0) 
-                if (this.Escolhido.usado==false)
+        }
+
+        private string NomeDoArquivo(string Data)
+        {
+            string nmSUb = "";
+            string dirSub = "";
+            this._SUbAtual = cIni.ReadString(this.Atual, "SubAtual", "");
+            if (this._SUbAtual.Length > 0)
+            {
+                if (this._SUbAtual != "GERAL")
                 {
-                    this.timer1.Interval = 100;
-                    this.timer1.Enabled = true;
+                    nmSUb = this._SUbAtual + "^";
+                    dirSub = @"\" + this._SUbAtual;
                 }
+            }
+            string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
+
+            // ✅ Working copy SEM data no nome: Projeto^Sub.txt
+            if (Data == "current")
+            {
+                return Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
+            }
+
+            // Arquivo histórico com data: Projeto^Sub^DD-MM-AAAA.txt
+            string sData = Data.Replace(@"/", "-");
+            return Pasta + @"\" + this.Atual + "^" + nmSUb + sData + ".txt";
         }
 
         private void AtuArqASerMostrado()
@@ -1780,24 +1747,7 @@ namespace Anoteitor
             }
         }
 
-        private string NomeDoArquivo(string Data)
-        {
-            string nmSUb = "";
-            string dirSub = "";
-            this._SUbAtual = cIni.ReadString(this.Atual, "SubAtual", "");
-            if (this._SUbAtual.Length > 0)
-            {
-                if (this._SUbAtual != "GERAL")
-                {
-                    nmSUb = this._SUbAtual + "^";
-                    dirSub = @"\" + this._SUbAtual;
-                }
-            }
-            string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
-            string sData = Data.Replace(@"/", "-");
-            string NomeArq = this.Atual + "^" + nmSUb + sData;
-            return Pasta + @"\" + NomeArq + ".txt";
-        }
+
 
         private void cbArquivos_DropDownClosed(object sender, EventArgs e)
         {
@@ -1966,13 +1916,16 @@ namespace Anoteitor
 
         private void cbSubprojeto_SelectedIndexChanged(object sender, EventArgs e)
         {
-            Console.WriteLine("cbSubprojeto_SelectedIndexChanged");
+            this.Loga("[v2.2] cbSubprojeto_SelectedIndexChanged");
+            this.Loga("Carregado=" + this.Carregado + ", Text=" + cbSubprojeto.Text + ", Old=" + this.cbArquivosSUbOld);
 
-            if (this.Carregado && cbSubprojeto.Text != this.cbArquivosSUbOld)
+            // ✅ REMOVIDO: if (this.Carregado) — bloqueava carga inicial
+            if (cbSubprojeto.Text != this.cbArquivosSUbOld)
             {
-                // ✅ SALVAR antes de trocar de subatividade
-                if (this.IsDirty)
+                // ✅ Salvar antes de trocar SOMENTE se houver conteúdo não salvo
+                if (this.Carregado && this.IsDirty)
                 {
+                    this.Loga("Salvando antes de trocar de subatividade");
                     this.Save();
                 }
 
@@ -1981,31 +1934,18 @@ namespace Anoteitor
                 this.SUbAtual = cbSubprojeto.Text;
                 cIni.WriteString(this.Atual, "SubAtual", this.SUbAtual);
 
-                // ✅ Desabilitar timer para evitar salvamento conflitante durante transição
-                this.timer1.Enabled = false;
+                this.timer1.Enabled = false; // Desabilitar timer durante transição
 
-                // ✅ Carregar arquivo do dia atual na nova subatividade
                 this.Filename = NomeDoArquivo(Data);
-                this.Open(this.Filename);
+                this.Loga("Abrindo novo arquivo: " + this.Filename);
+                this.Open(this.Filename); // ✅ Open() agora define Carregado = true
                 this.cbArquivosSUbOld = this.SUbAtual;
 
-                // ✅ Atualizar UI
-                if (this.SUbAtual == "")
-                {
-                    renomearToolStripMenuItem.Enabled = false;
-                }
-                else
-                {
-                    renomearToolStripMenuItem.Enabled = true;
-                }
+                renomearToolStripMenuItem.Enabled = (this.SUbAtual != "" && this.SUbAtual != "GERAL");
                 apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
 
-                // ✅ Preparar combo de arquivos
-                string PastaSubAtual = (this.SUbAtual == "") ? "" : @"\" + this.SUbAtual;
-                string PastaSub = this.PastaGeral + @"\" + this.Atual + PastaSubAtual;
-
-                if (cIni.ReadBool("Projetos", "CopiaOutroDia", false))
-                    this.HojeVazio = true;
+                string PastaSub = this.PastaGeral + @"\" + this.Atual +
+                                 (string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL" ? "" : @"\" + this.SUbAtual);
 
                 this.PreparaComboArquivo(PastaSub);
             }
@@ -2310,6 +2250,25 @@ namespace Anoteitor
             }
         }
 
+        private void toolStripMenuItem2_Click(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(this.NomeLog) || !File.Exists(this.NomeLog))
+            {
+                MessageBox.Show("Arquivo de log não encontrado.\nVerifique se o log está habilitado nas configurações.",
+                               this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                System.Diagnostics.Process.Start("notepad.exe", this.NomeLog);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erro ao abrir o log:\n{ex.Message}",
+                               this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
     }
 
     partial class cEscolhido
