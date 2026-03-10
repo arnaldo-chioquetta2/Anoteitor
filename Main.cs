@@ -2046,88 +2046,20 @@ namespace Anoteitor
             FindInAllFilesRecursive(this.PastaGeral);
         }
 
+// FindInAllFilesRecursive INICIO
         private async void FindInAllFilesRecursive(string baseDirectory)
         {
+            // Refatorado em 10/03/26 Original 80 linhas, resultado 118 linhas
             if (string.IsNullOrWhiteSpace(Content)) return;
-
-            string searchText = controlContentTextBox.SelectedText;
-
-            if (string.IsNullOrEmpty(searchText))
-            {
-                searchText = ShowInputDialog("Busca Global", "Digite o termo que deseja buscar:");
-                if (string.IsNullOrWhiteSpace(searchText)) return;
-            }
-
-            _cts = new CancellationTokenSource(); // Criamos um novo Token de Cancelamento
-            CancellationToken token = _cts.Token; // Obtém o token para verificar o cancelamento
-
-            List<string> foundOccurrences = new List<string>();
-
+            string searchText = ObterTextoBusca();
+            if (string.IsNullOrWhiteSpace(searchText)) return;
+            _cts = new CancellationTokenSource();
+            CancellationToken token = _cts.Token;
             try
             {
-                List<string> allFiles = Directory.GetFiles(baseDirectory, "*.*", SearchOption.AllDirectories).ToList();
-                int totalFiles = allFiles.Count;
-                int processedFiles = 0;
-
                 Resultados resultWindow = null;
-
-                await Task.Run(() =>
-                {
-                    foreach (var file in allFiles)
-                    {
-                        if (token.IsCancellationRequested) // Verifica se o usuário cancelou a busca
-                        {
-                            break;
-                        }
-
-                        processedFiles++;
-                        UpdateProgress(processedFiles, totalFiles);
-
-                        try
-                        {
-                            using (StreamReader reader = new StreamReader(file))
-                            {
-                                string line;
-                                int lineNumber = 0;
-                                while ((line = reader.ReadLine()) != null)
-                                {
-                                    lineNumber++;
-                                    if (line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
-                                    {
-                                        string formattedResult = $"[{file}] ➝ {line}";
-
-                                        if (resultWindow == null)
-                                        {
-                                            Invoke(new Action(() =>
-                                            {
-                                                resultWindow = new Resultados(this, new List<(string, string)> { (file, line) }, _cts);
-                                                resultWindow.StartPosition = FormStartPosition.CenterScreen;
-                                                resultWindow.Show();
-                                            }));
-                                        }
-                                        else
-                                        {
-                                            Invoke(new Action(() =>
-                                            {
-                                                resultWindow.AdicionarResultado(file, line);
-                                            }));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Invoke(new Action(() =>
-                            {
-                                MessageBox.Show($"Erro ao ler o arquivo {file}: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            }));
-                        }
-                    }
-                }, token);
-
+                await ExecutarBusca(baseDirectory, searchText, token, rw => resultWindow = rw, () => resultWindow);
                 Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
-
                 if (resultWindow == null)
                 {
                     MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -2138,6 +2070,183 @@ namespace Anoteitor
                 MessageBox.Show($"Erro ao buscar arquivos: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
+        private string ObterTextoBusca()
+        {
+            string searchText = controlContentTextBox.SelectedText;
+            if (string.IsNullOrEmpty(searchText))
+            {
+                searchText = ShowInputDialog("Busca Global", "Digite o termo que deseja buscar:");
+                if (string.IsNullOrWhiteSpace(searchText))
+                {
+                    return null;
+                }
+            }
+            return searchText;
+        }
+
+        private async Task ExecutarBusca(string baseDirectory, string searchText, CancellationToken token, Action<Resultados> setWindow, Func<Resultados> getWindow)
+        {
+            List<string> allFiles = Directory.GetFiles(baseDirectory, "*.*", SearchOption.AllDirectories).ToList();
+            int totalFiles = allFiles.Count;
+            int processedFiles = 0;
+            await Task.Run(() =>
+            {
+                foreach (var file in allFiles)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    processedFiles++;
+                    UpdateProgress(processedFiles, totalFiles);
+                    ProcessarArquivo(file, searchText, setWindow, getWindow);
+                }
+            }, token);
+        }
+
+        private void ProcessarArquivo(string file, string searchText, Action<Resultados> setWindow, Func<Resultados> getWindow)
+        {
+            try
+            {
+                using (StreamReader reader = new StreamReader(file))
+                {
+                    string line;
+                    int lineNumber = 0;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        lineNumber++;
+                        if (line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            TratarOcorrencia(file, line, setWindow, getWindow);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Invoke(new Action(() =>
+                {
+                    MessageBox.Show($"Erro ao ler o arquivo {file}: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }));
+            }
+        }
+
+        private void TratarOcorrencia(string file, string line, Action<Resultados> setWindow, Func<Resultados> getWindow)
+        {
+            var window = getWindow();
+            if (window == null)
+            {
+                Invoke(new Action(() =>
+                {
+                    var nova = new Resultados(this, new List<(string, string)> { (file, line) }, _cts);
+                    nova.StartPosition = FormStartPosition.CenterScreen;
+                    nova.Show();
+                    setWindow(nova);
+                }));
+            }
+            else
+            {
+                Invoke(new Action(() =>
+                {
+                    window.AdicionarResultado(file, line);
+                }));
+            }
+        }
+// FindInAllFilesRecursive FIM
+
+        //private async void FindInAllFilesRecursive(string baseDirectory)
+        //{
+        //    if (string.IsNullOrWhiteSpace(Content)) return;
+
+        //    string searchText = controlContentTextBox.SelectedText;
+
+        //    if (string.IsNullOrEmpty(searchText))
+        //    {
+        //        searchText = ShowInputDialog("Busca Global", "Digite o termo que deseja buscar:");
+        //        if (string.IsNullOrWhiteSpace(searchText)) return;
+        //    }
+
+        //    _cts = new CancellationTokenSource(); // Criamos um novo Token de Cancelamento
+        //    CancellationToken token = _cts.Token; // Obtém o token para verificar o cancelamento
+
+        //    List<string> foundOccurrences = new List<string>();
+
+        //    try
+        //    {
+        //        List<string> allFiles = Directory.GetFiles(baseDirectory, "*.*", SearchOption.AllDirectories).ToList();
+        //        int totalFiles = allFiles.Count;
+        //        int processedFiles = 0;
+
+        //        Resultados resultWindow = null;
+
+        //        await Task.Run(() =>
+        //        {
+        //            foreach (var file in allFiles)
+        //            {
+        //                if (token.IsCancellationRequested) // Verifica se o usuário cancelou a busca
+        //                {
+        //                    break;
+        //                }
+
+        //                processedFiles++;
+        //                UpdateProgress(processedFiles, totalFiles);
+
+        //                try
+        //                {
+        //                    using (StreamReader reader = new StreamReader(file))
+        //                    {
+        //                        string line;
+        //                        int lineNumber = 0;
+        //                        while ((line = reader.ReadLine()) != null)
+        //                        {
+        //                            lineNumber++;
+        //                            if (line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+        //                            {
+        //                                string formattedResult = $"[{file}] ➝ {line}";
+
+        //                                if (resultWindow == null)
+        //                                {
+        //                                    Invoke(new Action(() =>
+        //                                    {
+        //                                        resultWindow = new Resultados(this, new List<(string, string)> { (file, line) }, _cts);
+        //                                        resultWindow.StartPosition = FormStartPosition.CenterScreen;
+        //                                        resultWindow.Show();
+        //                                    }));
+        //                                }
+        //                                else
+        //                                {
+        //                                    Invoke(new Action(() =>
+        //                                    {
+        //                                        resultWindow.AdicionarResultado(file, line);
+        //                                    }));
+        //                                }
+        //                            }
+        //                        }
+        //                    }
+        //                }
+        //                catch (Exception ex)
+        //                {
+        //                    Invoke(new Action(() =>
+        //                    {
+        //                        MessageBox.Show($"Erro ao ler o arquivo {file}: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        //                    }));
+        //                }
+        //            }
+        //        }, token);
+
+        //        Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
+
+        //        if (resultWindow == null)
+        //        {
+        //            MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        MessageBox.Show($"Erro ao buscar arquivos: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        //    }
+        //}
 
         // Atualiza o título do programa com o percentual da busca
         private void UpdateProgress(int processed, int total)
