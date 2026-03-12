@@ -791,7 +791,7 @@ namespace Anoteitor
                 if (lastWriteDate == today)
                     controlContentTextBox.BackColor = SystemColors.Window; // Branco = hoje
                 else
-                    controlContentTextBox.BackColor = Color.LightBlue; // Azul = arquivo antigo
+                    controlContentTextBox.BackColor = Color.AliceBlue; //  Color.LightBlue; // Azul = arquivo antigo
             }
             catch
             {
