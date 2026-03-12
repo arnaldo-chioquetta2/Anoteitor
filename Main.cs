@@ -634,10 +634,51 @@ namespace Anoteitor
 
         public void Open(string pFilename, string searchText = null, Encoding encoding = null, bool ativar = false)
         {
-            this.Loga("[v2.6] Open: " + pFilename);
+            this.Loga("[v2.7] Open: " + pFilename);
 
             var Filename = pFilename;
             Console.WriteLine("Abrindo " + Filename);
+
+            // ✅ Passo 1: Verificar se existe working copy SEM data (formato correto: Projeto^Sub.txt)
+            string pasta = Path.GetDirectoryName(Filename);
+            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(Filename);
+            string[] nameParts = fileNameWithoutExt.Split('^');
+
+            // Construir nome do working copy CORRETO (sem data, sem "current")
+            string baseName;
+            if (nameParts.Length > 1 && System.Text.RegularExpressions.Regex.IsMatch(nameParts[nameParts.Length - 1], @"\d{2}-\d{2}-\d{4}"))
+            {
+                // Remover a data do nome: "Projeto^Sub^DD-MM-AAAA" → "Projeto^Sub"
+                baseName = string.Join("^", nameParts.Take(nameParts.Length - 1));
+            }
+            else
+            {
+                baseName = fileNameWithoutExt;
+            }
+
+            string workingCopyCorreto = Path.Combine(pasta, baseName + ".txt");
+            string workingCopyAntigo = Path.Combine(pasta, fileNameWithoutExt + "^current.txt"); // Para migração
+
+            // ✅ Prioridade 1: Working copy CORRETO (Projeto^Sub.txt)
+            if (File.Exists(workingCopyCorreto) && new FileInfo(workingCopyCorreto).Length > 3)
+            {
+                this.Loga($"✅ Working copy encontrado (formato correto): {workingCopyCorreto}");
+                Filename = workingCopyCorreto;
+            }
+            // ✅ Prioridade 2: Working copy ANTIGO (^current.txt) - migração
+            else if (File.Exists(workingCopyAntigo) && new FileInfo(workingCopyAntigo).Length > 3)
+            {
+                this.Loga($"⚠️ Working copy antigo encontrado (^current.txt): {workingCopyAntigo}");
+                this.Loga($"➡️ Migrando para formato correto: {workingCopyCorreto}");
+
+                // Migrar conteúdo para o formato correto
+                string conteudo = File.ReadAllText(workingCopyAntigo, Encoding.UTF8);
+                File.WriteAllText(workingCopyCorreto, conteudo, Encoding.UTF8);
+                File.Delete(workingCopyAntigo); // Remover arquivo antigo após migração
+
+                Filename = workingCopyCorreto;
+                this.Loga($"✅ Migração concluída para: {workingCopyCorreto}");
+            }
 
             // ✅ Criar arquivo se não existir
             if (!File.Exists(Filename))
@@ -677,7 +718,6 @@ namespace Anoteitor
             if (Content.Length == 0)
             {
                 this.Loga("⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...");
-                string pasta = Path.GetDirectoryName(Filename);
 
                 try
                 {
@@ -693,42 +733,27 @@ namespace Anoteitor
                         // ✅ Iterar até encontrar primeiro arquivo com conteúdo NÃO VAZIO
                         foreach (FileInfo arquivo in todosArquivos)
                         {
+                            // Pular o próprio arquivo atual e arquivos com data inválida
                             if (arquivo.FullName == Filename) continue;
-
-                            if (!System.Text.RegularExpressions.Regex.IsMatch(arquivo.Name, @"\d{2}-\d{2}-\d{4}\.txt$"))
-                                continue;
+                            if (!System.Text.RegularExpressions.Regex.IsMatch(arquivo.Name, @"\d{2}-\d{2}-\d{4}\.txt$")) continue;
 
                             string conteudoHistorico = File.ReadAllText(arquivo.FullName, Encoding.UTF8);
 
-                            if (conteudoHistorico.Length > 3)
+                            if (conteudoHistorico.Length > 3) // >3 bytes = conteúdo real além do BOM
                             {
                                 Content = conteudoHistorico;
                                 controlContentTextBox.Text = Content;
-                                controlContentTextBox.BackColor = Color.LightBlue;
+                                controlContentTextBox.BackColor = Color.LightBlue; // Azul = baseado em histórico
                                 IsDirty = true;
                                 this.Loga($"✅ Conteúdo NÃO VAZIO carregado de: {arquivo.Name} ({Content.Length} bytes)");
 
-                                // ✅ SALVAR IMEDIATAMENTE no working copy (sem data no nome)
-                                string fileNameWithoutExt = Path.GetFileNameWithoutExtension(Filename);
-                                string[] nameParts = fileNameWithoutExt.Split('^');
+                                // ✅ SALVAR IMEDIATAMENTE no working copy CORRETO (sem data no nome)
+                                File.WriteAllText(workingCopyCorreto, Content, Encoding.UTF8);
+                                this.Loga($"✅ Conteúdo salvo no working copy: {workingCopyCorreto}");
 
-                                // Verificar se o último elemento é uma data no formato DD-MM-AAAA
-                                string baseName;
-                                if (nameParts.Length > 1 && System.Text.RegularExpressions.Regex.IsMatch(nameParts[nameParts.Length - 1], @"\d{2}-\d{2}-\d{4}"))
-                                {
-                                    // Remover a data do nome para criar o working copy
-                                    baseName = string.Join("^", nameParts.Take(nameParts.Length - 1));
-                                }
-                                else
-                                {
-                                    // Se não tem data, usar nome completo
-                                    baseName = fileNameWithoutExt;
-                                }
-
-                                string workingCopy = Path.Combine(pasta, baseName + ".txt");
-                                File.WriteAllText(workingCopy, Content, Encoding.UTF8);
-                                this.Loga($"✅ Conteúdo salvo no working copy: {workingCopy}");
-                                this.Filename = workingCopy; // Atualizar para working copy
+                                // ✅ Atualizar Filename para o working copy CORRETO
+                                this.Filename = workingCopyCorreto;
+                                Filename = workingCopyCorreto;
                                 IsDirty = false;
                                 break;
                             }
@@ -761,6 +786,7 @@ namespace Anoteitor
                 SelectionStart = 0;
             }
 
+            // ✅ Garantir que Filename aponta para o working copy CORRETO
             this.Filename = Filename;
             IsDirty = false;
             toolStripStatusLabel1.Text = "";
@@ -769,6 +795,7 @@ namespace Anoteitor
             this.QtMinutos = cIni.ReadInt(Atual, "Tempo", 0);
             this.MotraCaracteres();
 
+            // ✅ FORÇAR Carregado = true após qualquer abertura
             this.Carregado = true;
             this.Loga("Open finalizado - Filename=" + this.Filename + ", Carregado=" + this.Carregado + ", Tamanho=" + Content.Length);
         }
@@ -1688,8 +1715,8 @@ namespace Anoteitor
             }
             string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
 
-            // ✅ PRIORIDADE 1: Working copy SEM data (ex: Empregos^Adi.txt)
-            string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
+            // ✅ PRIORIDADE 1: Working copy com "^current" (ex: Empregos^Cristian^current.txt)
+            string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb + "current.txt";
 
             // Se working copy existe, usar ele
             if (File.Exists(workingCopy))
@@ -1698,7 +1725,7 @@ namespace Anoteitor
                 return workingCopy;
             }
 
-            // ✅ PRIORIDADE 2: Arquivo do dia atual (ex: Empregos^Adi^09-03-2026.txt)
+            // ✅ PRIORIDADE 2: Arquivo do dia atual (ex: Empregos^Cristian^12-03-2026.txt)
             string sData = Data.Replace(@"/", "-");
             string todayFile = Pasta + @"\" + this.Atual + "^" + nmSUb + sData + ".txt";
 
@@ -2046,30 +2073,124 @@ namespace Anoteitor
             FindInAllFilesRecursive(this.PastaGeral);
         }
 
-// FindInAllFilesRecursive INICIO
+        // ✅ Método orquestrador (público)
         private async void FindInAllFilesRecursive(string baseDirectory)
         {
-            // Refatorado em 10/03/26 Original 80 linhas, resultado 118 linhas
-            if (string.IsNullOrWhiteSpace(Content)) return;
+            // Valida critérios antes de iniciar busca
+            if (!ValidateSearchCriteria())
+                return;
+
+            // Executa busca assíncrona com tratamento completo de erros
+            await ExecuteSearchAsync(baseDirectory);
+        }
+
+        // ✅ Método 1: Validação dos critérios de busca
+        private bool ValidateSearchCriteria()
+        {
+            if (string.IsNullOrWhiteSpace(Content))
+            {
+                this.Loga("Busca abortada: conteúdo vazio");
+                MessageBox.Show("Nenhum conteúdo para buscar.", "Anoteitor",
+                               MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
             string searchText = ObterTextoBusca();
-            if (string.IsNullOrWhiteSpace(searchText)) return;
+            if (string.IsNullOrWhiteSpace(searchText))
+            {
+                this.Loga("Busca abortada: texto de busca vazio");
+                MessageBox.Show("Digite o texto a ser buscado.", "Anoteitor",
+                               MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            this.Loga($"Critérios validados: buscando '{searchText}'");
+            return true;
+        }
+
+        // ✅ Método 2: Execução assíncrona da busca
+        private async Task ExecuteSearchAsync(string baseDirectory)
+        {
+            string searchText = ObterTextoBusca();
             _cts = new CancellationTokenSource();
             CancellationToken token = _cts.Token;
+
             try
             {
+                this.Loga($"Iniciando busca recursiva em: {baseDirectory}");
+                Invoke(new Action(() => { this.Text = "Anoteitor - Buscando..."; }));
+
                 Resultados resultWindow = null;
-                await ExecutarBusca(baseDirectory, searchText, token, rw => resultWindow = rw, () => resultWindow);
-                Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
-                if (resultWindow == null)
+                await ExecutarBusca(baseDirectory, searchText, token,
+                    rw => resultWindow = rw,
+                    () => resultWindow);
+
+                // Atualiza UI após conclusão
+                Invoke(new Action(() =>
                 {
-                    MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
+                    this.Text = "Anoteitor - Busca Concluída";
+                    ExibirResultadoBusca(resultWindow);
+                }));
+            }
+            catch (OperationCanceledException)
+            {
+                this.Loga("Busca cancelada pelo usuário");
+                Invoke(new Action(() => { this.Text = "Anoteitor - Busca Cancelada"; }));
+                MessageBox.Show("Busca cancelada.", "Anoteitor",
+                               MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Erro ao buscar arquivos: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                this.Loga($"Erro na busca: {ex.Message}");
+                Invoke(new Action(() => { this.Text = "Anoteitor - Erro na Busca"; }));
+                MessageBox.Show($"Erro ao buscar arquivos:\n{ex.Message}", "Erro",
+                               MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
+        private void ExibirResultadoBusca(Resultados resultWindow)
+        {
+            // Verificação segura: janela nula ou sem dados visíveis
+            if (resultWindow == null ||
+                (resultWindow.Controls.Find("dataGridView1", true).FirstOrDefault() is DataGridView dgv &&
+                 (dgv.Rows.Count == 0 || (dgv.AllowUserToAddRows && dgv.Rows.Count == 1))))
+            {
+                MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor",
+                               MessageBoxButtons.OK, MessageBoxIcon.Information);
+                this.Loga("Busca concluída: nenhum resultado encontrado");
+            }
+            else
+            {
+                // Mensagem genérica sem contagem exata (evita erro de compilação)
+                MessageBox.Show("Busca concluída com resultados encontrados.", "Anoteitor",
+                               MessageBoxButtons.OK, MessageBoxIcon.Information);
+                this.Loga("Busca concluída: resultados encontrados");
+            }
+        }
+
+        //private async void FindInAllFilesRecursive(string baseDirectory)
+        //{
+        //    // Refatorado em 10/03/26 Original 80 linhas, resultado 118 linhas
+        //    if (string.IsNullOrWhiteSpace(Content)) return;
+        //    string searchText = ObterTextoBusca();
+        //    if (string.IsNullOrWhiteSpace(searchText)) return;
+        //    _cts = new CancellationTokenSource();
+        //    CancellationToken token = _cts.Token;
+        //    try
+        //    {
+        //        Resultados resultWindow = null;
+        //        await ExecutarBusca(baseDirectory, searchText, token, rw => resultWindow = rw, () => resultWindow);
+        //        Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
+        //        if (resultWindow == null)
+        //        {
+        //            MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        MessageBox.Show($"Erro ao buscar arquivos: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        //    }
+        //}
 
         private string ObterTextoBusca()
         {
@@ -2154,99 +2275,6 @@ namespace Anoteitor
             }
         }
 // FindInAllFilesRecursive FIM
-
-        //private async void FindInAllFilesRecursive(string baseDirectory)
-        //{
-        //    if (string.IsNullOrWhiteSpace(Content)) return;
-
-        //    string searchText = controlContentTextBox.SelectedText;
-
-        //    if (string.IsNullOrEmpty(searchText))
-        //    {
-        //        searchText = ShowInputDialog("Busca Global", "Digite o termo que deseja buscar:");
-        //        if (string.IsNullOrWhiteSpace(searchText)) return;
-        //    }
-
-        //    _cts = new CancellationTokenSource(); // Criamos um novo Token de Cancelamento
-        //    CancellationToken token = _cts.Token; // Obtém o token para verificar o cancelamento
-
-        //    List<string> foundOccurrences = new List<string>();
-
-        //    try
-        //    {
-        //        List<string> allFiles = Directory.GetFiles(baseDirectory, "*.*", SearchOption.AllDirectories).ToList();
-        //        int totalFiles = allFiles.Count;
-        //        int processedFiles = 0;
-
-        //        Resultados resultWindow = null;
-
-        //        await Task.Run(() =>
-        //        {
-        //            foreach (var file in allFiles)
-        //            {
-        //                if (token.IsCancellationRequested) // Verifica se o usuário cancelou a busca
-        //                {
-        //                    break;
-        //                }
-
-        //                processedFiles++;
-        //                UpdateProgress(processedFiles, totalFiles);
-
-        //                try
-        //                {
-        //                    using (StreamReader reader = new StreamReader(file))
-        //                    {
-        //                        string line;
-        //                        int lineNumber = 0;
-        //                        while ((line = reader.ReadLine()) != null)
-        //                        {
-        //                            lineNumber++;
-        //                            if (line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
-        //                            {
-        //                                string formattedResult = $"[{file}] ➝ {line}";
-
-        //                                if (resultWindow == null)
-        //                                {
-        //                                    Invoke(new Action(() =>
-        //                                    {
-        //                                        resultWindow = new Resultados(this, new List<(string, string)> { (file, line) }, _cts);
-        //                                        resultWindow.StartPosition = FormStartPosition.CenterScreen;
-        //                                        resultWindow.Show();
-        //                                    }));
-        //                                }
-        //                                else
-        //                                {
-        //                                    Invoke(new Action(() =>
-        //                                    {
-        //                                        resultWindow.AdicionarResultado(file, line);
-        //                                    }));
-        //                                }
-        //                            }
-        //                        }
-        //                    }
-        //                }
-        //                catch (Exception ex)
-        //                {
-        //                    Invoke(new Action(() =>
-        //                    {
-        //                        MessageBox.Show($"Erro ao ler o arquivo {file}: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        //                    }));
-        //                }
-        //            }
-        //        }, token);
-
-        //        Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
-
-        //        if (resultWindow == null)
-        //        {
-        //            MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        //        }
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        MessageBox.Show($"Erro ao buscar arquivos: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        //    }
-        //}
 
         // Atualiza o título do programa com o percentual da busca
         private void UpdateProgress(int processed, int total)
