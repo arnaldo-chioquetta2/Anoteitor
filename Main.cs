@@ -9,6 +9,7 @@ using System.Windows.Forms;
 using System.Threading.Tasks;
 using System.Drawing.Printing;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace Anoteitor
 {
@@ -1700,7 +1701,7 @@ namespace Anoteitor
                 this.cbArquivos.Items.Add("TUDO");
         }
 
-        private string NomeDoArquivo(string Data)
+        private string NomeDoArquivo(string Data, bool forcarDataEspecifica = false)
         {
             string nmSUb = "";
             string dirSub = "";
@@ -1715,8 +1716,17 @@ namespace Anoteitor
             }
             string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
 
-            // ✅ PRIORIDADE 1: Working copy com "^current" (ex: Empregos^Cristian^current.txt)
-            string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb + "current.txt";
+            // ✅ Se forçar data específica, abrir EXATAMENTE o arquivo da data selecionada
+            if (forcarDataEspecifica)
+            {
+                string sDataX = Data.Replace(@"/", "-");
+                string arquivoData = Pasta + @"\" + this.Atual + "^" + nmSUb + sDataX + ".txt";
+                this.Loga($"Forçando abertura do arquivo da data {Data}: {arquivoData}");
+                return arquivoData;
+            }
+
+            // ✅ PRIORIDADE 1: Working copy SEM data (ex: Empregos^Cristian.txt)
+            string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
 
             // Se working copy existe, usar ele
             if (File.Exists(workingCopy))
@@ -1725,7 +1735,15 @@ namespace Anoteitor
                 return workingCopy;
             }
 
-            // ✅ PRIORIDADE 2: Arquivo do dia atual (ex: Empregos^Cristian^12-03-2026.txt)
+            // ✅ PRIORIDADE 2: Working copy ANTIGO (^current.txt) - migração
+            string workingCopyAntigo = Pasta + @"\" + this.Atual + "^" + nmSUb + "current.txt";
+            if (File.Exists(workingCopyAntigo))
+            {
+                this.Loga("Working copy antigo encontrado (^current.txt): " + workingCopyAntigo);
+                return workingCopyAntigo;
+            }
+
+            // ✅ PRIORIDADE 3: Arquivo do dia atual (ex: Empregos^Cristian^17-03-2026.txt)
             string sData = Data.Replace(@"/", "-");
             string todayFile = Pasta + @"\" + this.Atual + "^" + nmSUb + sData + ".txt";
 
@@ -1735,7 +1753,7 @@ namespace Anoteitor
 
         private void AtuArqASerMostrado()
         {
-            this.Loga("AtuArqASerMostrado");
+            this.Loga("[v2.8] AtuArqASerMostrado");
             this.Loga("Carregado = " + this.Carregado.ToString());
 
             if (this.Carregado)
@@ -1763,20 +1781,38 @@ namespace Anoteitor
                     }
                     else if (cbArquivos.Text != this.cbArquivosOld)
                     {
-                        // ✅ SALVAR antes de trocar
+                        // ✅ SALVAR working copy atual ANTES de visualizar histórico
                         if (this.IsDirty)
                         {
+                            this.Loga("⚠️ Salvando working copy atual antes de visualizar histórico");
                             this.Save();
                         }
 
-                        // ✅ Desabilitar timer
+                        // ✅ Desabilitar timer durante visualização de histórico
                         this.timer1.Enabled = false;
 
-                        Filename = NomeDoArquivo(cbArquivos.Text);
-                        Open(this.Filename);
-                        cbArquivosOld = cbArquivos.Text;
-                    }
+                        // ✅ CONSTRUÇÃO DO CAMINHO DO ARQUIVO HISTÓRICO (sem working copy)
+                        string dataSelecionada = cbArquivos.Text.Replace("/", "-").Replace(".", "-");
+                        string nmSUb = "";
+                        string dirSub = "";
 
+                        if (!string.IsNullOrEmpty(this.SUbAtual) && this.SUbAtual != "GERAL")
+                        {
+                            nmSUb = this.SUbAtual + "^";
+                            dirSub = @"\" + this.SUbAtual;
+                        }
+
+                        string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
+                        string arquivoHistorico = Pasta + @"\" + this.Atual + "^" + nmSUb + dataSelecionada + ".txt";
+
+                        this.Loga($"🔍 Tentando abrir arquivo HISTÓRICO da data {dataSelecionada}: {arquivoHistorico}");
+
+                        // ✅ USAR MÉTODO ESPECÍFICO PARA HISTÓRICO (SEM SUBSTITUIR PELO WORKING COPY!)
+                        OpenHistoricalFile(arquivoHistorico);
+                        this.cbArquivosOld = cbArquivos.Text;
+
+                        // ✅ Forçar fundo AZUL já no método OpenHistoricalFile (feito acima)
+                    }
                     if (Atual != this.AtualAnt)
                     {
                         this.AtualAnt = this.Atual;
@@ -1785,8 +1821,6 @@ namespace Anoteitor
                 }
             }
         }
-
-
 
         private void cbArquivos_DropDownClosed(object sender, EventArgs e)
         {
@@ -2073,124 +2107,29 @@ namespace Anoteitor
             FindInAllFilesRecursive(this.PastaGeral);
         }
 
-        // ✅ Método orquestrador (público)
         private async void FindInAllFilesRecursive(string baseDirectory)
         {
-            // Valida critérios antes de iniciar busca
-            if (!ValidateSearchCriteria())
-                return;
-
-            // Executa busca assíncrona com tratamento completo de erros
-            await ExecuteSearchAsync(baseDirectory);
-        }
-
-        // ✅ Método 1: Validação dos critérios de busca
-        private bool ValidateSearchCriteria()
-        {
-            if (string.IsNullOrWhiteSpace(Content))
-            {
-                this.Loga("Busca abortada: conteúdo vazio");
-                MessageBox.Show("Nenhum conteúdo para buscar.", "Anoteitor",
-                               MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return false;
-            }
-
+            // Tentei refatorar pelo Qwen em 12/03/2026 e deu errado
+            if (string.IsNullOrWhiteSpace(Content)) return;
             string searchText = ObterTextoBusca();
-            if (string.IsNullOrWhiteSpace(searchText))
-            {
-                this.Loga("Busca abortada: texto de busca vazio");
-                MessageBox.Show("Digite o texto a ser buscado.", "Anoteitor",
-                               MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return false;
-            }
-
-            this.Loga($"Critérios validados: buscando '{searchText}'");
-            return true;
-        }
-
-        // ✅ Método 2: Execução assíncrona da busca
-        private async Task ExecuteSearchAsync(string baseDirectory)
-        {
-            string searchText = ObterTextoBusca();
+            if (string.IsNullOrWhiteSpace(searchText)) return;
             _cts = new CancellationTokenSource();
             CancellationToken token = _cts.Token;
-
             try
             {
-                this.Loga($"Iniciando busca recursiva em: {baseDirectory}");
-                Invoke(new Action(() => { this.Text = "Anoteitor - Buscando..."; }));
-
                 Resultados resultWindow = null;
-                await ExecutarBusca(baseDirectory, searchText, token,
-                    rw => resultWindow = rw,
-                    () => resultWindow);
-
-                // Atualiza UI após conclusão
-                Invoke(new Action(() =>
+                await ExecutarBusca(baseDirectory, searchText, token, rw => resultWindow = rw, () => resultWindow);
+                Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
+                if (resultWindow == null)
                 {
-                    this.Text = "Anoteitor - Busca Concluída";
-                    ExibirResultadoBusca(resultWindow);
-                }));
-            }
-            catch (OperationCanceledException)
-            {
-                this.Loga("Busca cancelada pelo usuário");
-                Invoke(new Action(() => { this.Text = "Anoteitor - Busca Cancelada"; }));
-                MessageBox.Show("Busca cancelada.", "Anoteitor",
-                               MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
             }
             catch (Exception ex)
             {
-                this.Loga($"Erro na busca: {ex.Message}");
-                Invoke(new Action(() => { this.Text = "Anoteitor - Erro na Busca"; }));
-                MessageBox.Show($"Erro ao buscar arquivos:\n{ex.Message}", "Erro",
-                               MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Erro ao buscar arquivos: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-
-        private void ExibirResultadoBusca(Resultados resultWindow)
-        {
-            // Verificação segura: janela nula ou sem dados visíveis
-            if (resultWindow == null ||
-                (resultWindow.Controls.Find("dataGridView1", true).FirstOrDefault() is DataGridView dgv &&
-                 (dgv.Rows.Count == 0 || (dgv.AllowUserToAddRows && dgv.Rows.Count == 1))))
-            {
-                MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor",
-                               MessageBoxButtons.OK, MessageBoxIcon.Information);
-                this.Loga("Busca concluída: nenhum resultado encontrado");
-            }
-            else
-            {
-                // Mensagem genérica sem contagem exata (evita erro de compilação)
-                MessageBox.Show("Busca concluída com resultados encontrados.", "Anoteitor",
-                               MessageBoxButtons.OK, MessageBoxIcon.Information);
-                this.Loga("Busca concluída: resultados encontrados");
-            }
-        }
-
-        //private async void FindInAllFilesRecursive(string baseDirectory)
-        //{
-        //    // Refatorado em 10/03/26 Original 80 linhas, resultado 118 linhas
-        //    if (string.IsNullOrWhiteSpace(Content)) return;
-        //    string searchText = ObterTextoBusca();
-        //    if (string.IsNullOrWhiteSpace(searchText)) return;
-        //    _cts = new CancellationTokenSource();
-        //    CancellationToken token = _cts.Token;
-        //    try
-        //    {
-        //        Resultados resultWindow = null;
-        //        await ExecutarBusca(baseDirectory, searchText, token, rw => resultWindow = rw, () => resultWindow);
-        //        Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
-        //        if (resultWindow == null)
-        //        {
-        //            MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
-        //        }
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        MessageBox.Show($"Erro ao buscar arquivos: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        //    }
-        //}
 
         private string ObterTextoBusca()
         {
@@ -2274,7 +2213,6 @@ namespace Anoteitor
                 }));
             }
         }
-// FindInAllFilesRecursive FIM
 
         // Atualiza o título do programa com o percentual da busca
         private void UpdateProgress(int processed, int total)
@@ -2418,6 +2356,71 @@ namespace Anoteitor
                                this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
+        /// <summary>
+        /// Abre EXATAMENTE o arquivo histórico especificado, SEM substituir pelo working copy
+        /// Usado apenas para visualização de datas antigas via combo de datas
+        /// </summary>
+        private void OpenHistoricalFile(string historicalFilePath)
+        {
+            this.Loga($"[v2.9] OpenHistoricalFile: {historicalFilePath}");
+
+            if (!File.Exists(historicalFilePath))
+            {
+                this.Loga($"❌ Arquivo histórico NÃO EXISTE: {historicalFilePath}");
+                MessageBox.Show(
+                    $"O arquivo para a data selecionada não existe.\n\nCaminho: {historicalFilePath}",
+                    "Anoteitor - Arquivo não encontrado",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            FileInfo fi = new FileInfo(historicalFilePath);
+            if (fi.Length <= 3) // Apenas BOM UTF-8
+            {
+                this.Loga($"⚠️ Arquivo histórico vazio (apenas BOM): {historicalFilePath}");
+                MessageBox.Show(
+                    $"O arquivo da data selecionada está vazio.\n\nNenhum conteúdo salvo para esta data.",
+                    "Anoteitor - Arquivo vazio",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                // Ler conteúdo SEM lógica de working copy
+                string content = ReadAllText(historicalFilePath);
+                Content = content;
+                controlContentTextBox.Text = Content;
+
+                // Atualizar estado
+                this.Filename = historicalFilePath;
+                IsDirty = false;
+                toolStripStatusLabel1.Text = "";
+
+                // ✅ FORÇAR fundo AZUL para indicar visualização de histórico
+                controlContentTextBox.BackColor = Color.AliceBlue;
+                this.Loga($"✅ Conteúdo histórico carregado com sucesso ({Content.Length} caracteres)");
+
+                // Atualizar UI
+                this.QtMinutosEsse = 0;
+                this.QtMinutos = cIni.ReadInt(Atual, "Tempo", 0);
+                this.MotraCaracteres();
+                this.Carregado = true;
+            }
+            catch (Exception ex)
+            {
+                this.Loga($"❌ Erro ao abrir arquivo histórico: {ex.Message}");
+                MessageBox.Show(
+                    $"Erro ao abrir o arquivo histórico:\n{ex.Message}",
+                    "Anoteitor - Erro",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
     }
 
     partial class cEscolhido
