@@ -633,173 +633,365 @@ namespace Anoteitor
             return true;
         }
 
+        // ✅ MÉTODO 1: Orquestrador principal (28 linhas)
         public void Open(string pFilename, string searchText = null, Encoding encoding = null, bool ativar = false)
         {
-            this.Loga("[v2.7] Open: " + pFilename);
+            this.Loga($"[v2.13] Open: {pFilename}");
+            Console.WriteLine($"Abrindo {pFilename}");
 
-            var Filename = pFilename;
-            Console.WriteLine("Abrindo " + Filename);
+            // ✅ Passo 1: Determinar arquivo correto (working copy ou migração)
+            string arquivoFinal = DeterminarArquivoCorreto(pFilename);
 
-            // ✅ Passo 1: Verificar se existe working copy SEM data (formato correto: Projeto^Sub.txt)
-            string pasta = Path.GetDirectoryName(Filename);
-            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(Filename);
-            string[] nameParts = fileNameWithoutExt.Split('^');
+            // ✅ Passo 2: Criar arquivo se não existir
+            if (!File.Exists(arquivoFinal))
+                arquivoFinal = CriarArquivoNovo(arquivoFinal);
 
-            // Construir nome do working copy CORRETO (sem data, sem "current")
-            string baseName;
-            if (nameParts.Length > 1 && System.Text.RegularExpressions.Regex.IsMatch(nameParts[nameParts.Length - 1], @"\d{2}-\d{2}-\d{4}"))
-            {
-                // Remover a data do nome: "Projeto^Sub^DD-MM-AAAA" → "Projeto^Sub"
-                baseName = string.Join("^", nameParts.Take(nameParts.Length - 1));
-            }
-            else
-            {
-                baseName = fileNameWithoutExt;
-            }
+            // ✅ Passo 3: Ler conteúdo do arquivo
+            LerConteudoArquivo(arquivoFinal, encoding);
 
-            string workingCopyCorreto = Path.Combine(pasta, baseName + ".txt");
-            string workingCopyAntigo = Path.Combine(pasta, fileNameWithoutExt + "^current.txt"); // Para migração
-
-            // ✅ Prioridade 1: Working copy CORRETO (Projeto^Sub.txt)
-            if (File.Exists(workingCopyCorreto) && new FileInfo(workingCopyCorreto).Length > 3)
-            {
-                this.Loga($"✅ Working copy encontrado (formato correto): {workingCopyCorreto}");
-                Filename = workingCopyCorreto;
-            }
-            // ✅ Prioridade 2: Working copy ANTIGO (^current.txt) - migração
-            else if (File.Exists(workingCopyAntigo) && new FileInfo(workingCopyAntigo).Length > 3)
-            {
-                this.Loga($"⚠️ Working copy antigo encontrado (^current.txt): {workingCopyAntigo}");
-                this.Loga($"➡️ Migrando para formato correto: {workingCopyCorreto}");
-
-                // Migrar conteúdo para o formato correto
-                string conteudo = File.ReadAllText(workingCopyAntigo, Encoding.UTF8);
-                File.WriteAllText(workingCopyCorreto, conteudo, Encoding.UTF8);
-                File.Delete(workingCopyAntigo); // Remover arquivo antigo após migração
-
-                Filename = workingCopyCorreto;
-                this.Loga($"✅ Migração concluída para: {workingCopyCorreto}");
-            }
-
-            // ✅ Criar arquivo se não existir
-            if (!File.Exists(Filename))
-            {
-                Console.WriteLine("Arquivo não existe - criando novo");
-                var Extension = Path.GetExtension(Filename);
-                if (string.IsNullOrEmpty(Extension))
-                {
-                    Filename += ".txt";
-                }
-
-                string directory = Path.GetDirectoryName(Filename);
-                if (!Directory.Exists(directory))
-                    Directory.CreateDirectory(directory);
-
-                File.WriteAllText(Filename, "", Encoding.UTF8);
-                this.Loga("Arquivo criado: " + Filename);
-            }
-
-            #region Determine Encoding
-            if (encoding == null)
-            {
-                using (var streamReader = new StreamReader(Filename, detectEncodingFromByteOrderMarks: true))
-                {
-                    var text = streamReader.ReadToEnd();
-                    _encoding = streamReader.CurrentEncoding;
-                    this.Loga("Encoding detectado: " + _encoding.EncodingName);
-                }
-            }
-            #endregion
-
-            string sTemp = ReadAllText(Filename, encoding);
-            Content = sTemp;
-            this.Loga("Conteúdo lido: " + (Content.Length > 0 ? Content.Length + " caracteres" : "VAZIO"));
-
-            // ✅ SE arquivo está vazio (só BOM ou 0 bytes), carregar conteúdo do último arquivo histórico
+            // ✅ Passo 4: Tratar arquivo vazio (carregar histórico se necessário)
             if (Content.Length == 0)
-            {
-                this.Loga("⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...");
+                TratarArquivoVazio(arquivoFinal);
 
-                try
-                {
-                    DirectoryInfo dir = new DirectoryInfo(pasta);
-                    if (dir.Exists)
-                    {
-                        FileInfo[] todosArquivos = dir.GetFiles("*^*.txt")
-                            .OrderByDescending(f => f.LastWriteTime)
-                            .ToArray();
-
-                        this.Loga($"Encontrados {todosArquivos.Length} arquivos com '^' na pasta");
-
-                        // ✅ Iterar até encontrar primeiro arquivo com conteúdo NÃO VAZIO
-                        foreach (FileInfo arquivo in todosArquivos)
-                        {
-                            // Pular o próprio arquivo atual e arquivos com data inválida
-                            if (arquivo.FullName == Filename) continue;
-                            if (!System.Text.RegularExpressions.Regex.IsMatch(arquivo.Name, @"\d{2}-\d{2}-\d{4}\.txt$")) continue;
-
-                            string conteudoHistorico = File.ReadAllText(arquivo.FullName, Encoding.UTF8);
-
-                            if (conteudoHistorico.Length > 3) // >3 bytes = conteúdo real além do BOM
-                            {
-                                Content = conteudoHistorico;
-                                controlContentTextBox.Text = Content;
-                                controlContentTextBox.BackColor = Color.LightBlue; // Azul = baseado em histórico
-                                IsDirty = true;
-                                this.Loga($"✅ Conteúdo NÃO VAZIO carregado de: {arquivo.Name} ({Content.Length} bytes)");
-
-                                // ✅ SALVAR IMEDIATAMENTE no working copy CORRETO (sem data no nome)
-                                File.WriteAllText(workingCopyCorreto, Content, Encoding.UTF8);
-                                this.Loga($"✅ Conteúdo salvo no working copy: {workingCopyCorreto}");
-
-                                // ✅ Atualizar Filename para o working copy CORRETO
-                                this.Filename = workingCopyCorreto;
-                                Filename = workingCopyCorreto;
-                                IsDirty = false;
-                                break;
-                            }
-                            else
-                            {
-                                this.Loga($"⚠️ Arquivo ignorado (vazio/BOM apenas): {arquivo.Name}");
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    this.Loga("❌ Erro ao buscar conteúdo histórico: " + ex.Message);
-                }
-            }
-
+            // ✅ Passo 5: Aplicar busca de texto (se fornecida)
             if (!string.IsNullOrEmpty(searchText))
-            {
-                int index = Content.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
-                if (index >= 0)
-                {
-                    controlContentTextBox.SelectionStart = index;
-                    controlContentTextBox.SelectionLength = searchText.Length;
-                    if (ativar) controlContentTextBox.Focus();
-                    controlContentTextBox.ScrollToCaret();
-                }
-            }
+                AplicarBuscaTexto(searchText, ativar);
             else
-            {
                 SelectionStart = 0;
-            }
 
-            // ✅ Garantir que Filename aponta para o working copy CORRETO
-            this.Filename = Filename;
+            // ✅ Passo 6: Finalizar abertura
+            FinalizarAbertura(arquivoFinal);
+
+            this.Loga($"Open finalizado - Filename={this.Filename}, Carregado={this.Carregado}, Tamanho={Content.Length}");
+        }
+
+        // ✅ MÉTODO 7: Finalizar abertura do arquivo (15 linhas)
+        private void FinalizarAbertura(string arquivoFinal)
+        {
+            this.Filename = arquivoFinal;
             IsDirty = false;
             toolStripStatusLabel1.Text = "";
             this.AjustaCorFundo();
             this.QtMinutosEsse = 0;
             this.QtMinutos = cIni.ReadInt(Atual, "Tempo", 0);
             this.MotraCaracteres();
-
-            // ✅ FORÇAR Carregado = true após qualquer abertura
-            this.Carregado = true;
-            this.Loga("Open finalizado - Filename=" + this.Filename + ", Carregado=" + this.Carregado + ", Tamanho=" + Content.Length);
+            this.Carregado = true; // ✅ FORÇAR Carregado = true após qualquer abertura
         }
+
+        // ✅ MÉTODO 6: Aplicar busca de texto (12 linhas)
+        private void AplicarBuscaTexto(string searchText, bool ativar)
+        {
+            int index = Content.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
+            if (index >= 0)
+            {
+                controlContentTextBox.SelectionStart = index;
+                controlContentTextBox.SelectionLength = searchText.Length;
+                if (ativar) controlContentTextBox.Focus();
+                controlContentTextBox.ScrollToCaret();
+            }
+        }
+        // ✅ MÉTODO 5: Tratar arquivo vazio com busca histórica (42 linhas)
+        private void TratarArquivoVazio(string arquivoAtual)
+        {
+            this.Loga("⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...");
+
+            try
+            {
+                string pasta = Path.GetDirectoryName(arquivoAtual);
+                DirectoryInfo dir = new DirectoryInfo(pasta);
+
+                if (!dir.Exists) return;
+
+                // Buscar arquivos históricos com data válida
+                FileInfo[] arquivosHistoricos = dir.GetFiles("*^*.txt")
+                    .Where(f => Regex.IsMatch(f.Name, @"\d{2}-\d{2}-\d{4}\.txt$") && f.Length > 3)
+                    .OrderByDescending(f => f.LastWriteTime)
+                    .ToArray();
+
+                this.Loga($"Encontrados {arquivosHistoricos.Length} arquivos históricos com conteúdo");
+
+                // Encontrar primeiro arquivo com conteúdo real
+                foreach (FileInfo arquivo in arquivosHistoricos)
+                {
+                    if (arquivo.FullName == arquivoAtual) continue;
+
+                    string conteudo = File.ReadAllText(arquivo.FullName, Encoding.UTF8);
+                    if (conteudo.Length > 3) // Conteúdo real além do BOM
+                    {
+                        Content = conteudo;
+                        controlContentTextBox.Text = Content;
+                        controlContentTextBox.BackColor = Color.LightBlue; // Azul = baseado em histórico
+                        IsDirty = true;
+
+                        this.Loga($"✅ Conteúdo carregado de: {arquivo.Name} ({Content.Length} bytes)");
+
+                        // Salvar imediatamente no working copy
+                        string pastaArq = Path.GetDirectoryName(arquivoAtual);
+                        string nomeBase = Path.GetFileNameWithoutExtension(arquivoAtual).Split('^')[0];
+                        string workingCopy = Path.Combine(pastaArq, nomeBase + ".txt");
+
+                        File.WriteAllText(workingCopy, Content, Encoding.UTF8);
+                        this.Loga($"✅ Conteúdo salvo no working copy: {workingCopy}");
+
+                        this.Filename = workingCopy;
+                        IsDirty = false;
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Loga($"❌ Erro ao buscar conteúdo histórico: {ex.Message}");
+            }
+        }
+
+        // ✅ MÉTODO 4: Ler conteúdo do arquivo com encoding (22 linhas)
+        private void LerConteudoArquivo(string filename, Encoding encoding)
+        {
+            // Detectar encoding se não fornecido
+            if (encoding == null)
+            {
+                using (var sr = new StreamReader(filename, detectEncodingFromByteOrderMarks: true))
+                {
+                    sr.ReadToEnd();
+                    _encoding = sr.CurrentEncoding;
+                    this.Loga($"Encoding detectado: {_encoding.EncodingName}");
+                }
+            }
+
+            // Ler conteúdo
+            string content = ReadAllText(filename, encoding);
+            Content = content;
+            controlContentTextBox.Text = Content;
+
+            this.Loga($"Conteúdo lido: {(Content.Length > 0 ? Content.Length + " caracteres" : "VAZIO")}");
+        }
+        // ✅ MÉTODO 3: Criar arquivo novo se não existir (18 linhas)
+        private string CriarArquivoNovo(string filename)
+        {
+            Console.WriteLine("Arquivo não existe - criando novo");
+
+            if (string.IsNullOrEmpty(Path.GetExtension(filename)))
+                filename += ".txt";
+
+            string directory = Path.GetDirectoryName(filename);
+            if (!Directory.Exists(directory))
+                Directory.CreateDirectory(directory);
+
+            File.WriteAllText(filename, "", Encoding.UTF8);
+            this.Loga($"🆕 Arquivo criado: {filename}");
+
+            return filename;
+        }
+
+        // ✅ MÉTODO 2: Determinar arquivo correto com migração (38 linhas)
+        private string DeterminarArquivoCorreto(string pFilename)
+        {
+            string pasta = Path.GetDirectoryName(pFilename);
+            string fileNameWithoutExt = Path.GetFileNameWithoutExtension(pFilename);
+            string[] nameParts = fileNameWithoutExt.Split('^');
+
+            // Construir nome do working copy CORRETO (sem data)
+            string baseName = (nameParts.Length > 1 && Regex.IsMatch(nameParts[nameParts.Length - 1], @"\d{2}-\d{2}-\d{4}"))
+                ? string.Join("^", nameParts.Take(nameParts.Length - 1))
+                : fileNameWithoutExt;
+
+            string workingCopyCorreto = Path.Combine(pasta, baseName + ".txt");
+            string workingCopyAntigo = Path.Combine(pasta, fileNameWithoutExt + "^current.txt");
+
+            // ✅ Prioridade 1: Working copy CORRETO (Projeto^Sub.txt)
+            if (File.Exists(workingCopyCorreto) && new FileInfo(workingCopyCorreto).Length > 3)
+            {
+                this.Loga($"✅ Working copy encontrado (formato correto): {workingCopyCorreto}");
+                return workingCopyCorreto;
+            }
+
+            // ✅ Prioridade 2: Working copy ANTIGO (^current.txt) - migração
+            if (File.Exists(workingCopyAntigo) && new FileInfo(workingCopyAntigo).Length > 3)
+            {
+                this.Loga($"⚠️ Working copy antigo encontrado (^current.txt): {workingCopyAntigo}");
+                this.Loga($"➡️ Migrando para formato correto: {workingCopyCorreto}");
+
+                // Migrar conteúdo
+                string conteudo = File.ReadAllText(workingCopyAntigo, Encoding.UTF8);
+                File.WriteAllText(workingCopyCorreto, conteudo, Encoding.UTF8);
+                File.Delete(workingCopyAntigo);
+
+                this.Loga($"✅ Migração concluída para: {workingCopyCorreto}");
+                return workingCopyCorreto;
+            }
+
+            // ✅ Prioridade 3: Usar arquivo original (para histórico)
+            return pFilename;
+        }
+
+        //public void Open(string pFilename, string searchText = null, Encoding encoding = null, bool ativar = false)
+        //{
+        //    this.Loga("[v2.7] Open: " + pFilename);
+
+        //    var Filename = pFilename;
+        //    Console.WriteLine("Abrindo " + Filename);
+
+        //    // ✅ Passo 1: Verificar se existe working copy SEM data (formato correto: Projeto^Sub.txt)
+        //    string pasta = Path.GetDirectoryName(Filename);
+        //    string fileNameWithoutExt = Path.GetFileNameWithoutExtension(Filename);
+        //    string[] nameParts = fileNameWithoutExt.Split('^');
+
+        //    // Construir nome do working copy CORRETO (sem data, sem "current")
+        //    string baseName;
+        //    if (nameParts.Length > 1 && System.Text.RegularExpressions.Regex.IsMatch(nameParts[nameParts.Length - 1], @"\d{2}-\d{2}-\d{4}"))
+        //    {
+        //        // Remover a data do nome: "Projeto^Sub^DD-MM-AAAA" → "Projeto^Sub"
+        //        baseName = string.Join("^", nameParts.Take(nameParts.Length - 1));
+        //    }
+        //    else
+        //    {
+        //        baseName = fileNameWithoutExt;
+        //    }
+
+        //    string workingCopyCorreto = Path.Combine(pasta, baseName + ".txt");
+        //    string workingCopyAntigo = Path.Combine(pasta, fileNameWithoutExt + "^current.txt"); // Para migração
+
+        //    // ✅ Prioridade 1: Working copy CORRETO (Projeto^Sub.txt)
+        //    if (File.Exists(workingCopyCorreto) && new FileInfo(workingCopyCorreto).Length > 3)
+        //    {
+        //        this.Loga($"✅ Working copy encontrado (formato correto): {workingCopyCorreto}");
+        //        Filename = workingCopyCorreto;
+        //    }
+        //    // ✅ Prioridade 2: Working copy ANTIGO (^current.txt) - migração
+        //    else if (File.Exists(workingCopyAntigo) && new FileInfo(workingCopyAntigo).Length > 3)
+        //    {
+        //        this.Loga($"⚠️ Working copy antigo encontrado (^current.txt): {workingCopyAntigo}");
+        //        this.Loga($"➡️ Migrando para formato correto: {workingCopyCorreto}");
+
+        //        // Migrar conteúdo para o formato correto
+        //        string conteudo = File.ReadAllText(workingCopyAntigo, Encoding.UTF8);
+        //        File.WriteAllText(workingCopyCorreto, conteudo, Encoding.UTF8);
+        //        File.Delete(workingCopyAntigo); // Remover arquivo antigo após migração
+
+        //        Filename = workingCopyCorreto;
+        //        this.Loga($"✅ Migração concluída para: {workingCopyCorreto}");
+        //    }
+
+        //    // ✅ Criar arquivo se não existir
+        //    if (!File.Exists(Filename))
+        //    {
+        //        Console.WriteLine("Arquivo não existe - criando novo");
+        //        var Extension = Path.GetExtension(Filename);
+        //        if (string.IsNullOrEmpty(Extension))
+        //        {
+        //            Filename += ".txt";
+        //        }
+
+        //        string directory = Path.GetDirectoryName(Filename);
+        //        if (!Directory.Exists(directory))
+        //            Directory.CreateDirectory(directory);
+
+        //        File.WriteAllText(Filename, "", Encoding.UTF8);
+        //        this.Loga("Arquivo criado: " + Filename);
+        //    }
+
+        //    #region Determine Encoding
+        //    if (encoding == null)
+        //    {
+        //        using (var streamReader = new StreamReader(Filename, detectEncodingFromByteOrderMarks: true))
+        //        {
+        //            var text = streamReader.ReadToEnd();
+        //            _encoding = streamReader.CurrentEncoding;
+        //            this.Loga("Encoding detectado: " + _encoding.EncodingName);
+        //        }
+        //    }
+        //    #endregion
+
+        //    string sTemp = ReadAllText(Filename, encoding);
+        //    Content = sTemp;
+        //    this.Loga("Conteúdo lido: " + (Content.Length > 0 ? Content.Length + " caracteres" : "VAZIO"));
+
+        //    // ✅ SE arquivo está vazio (só BOM ou 0 bytes), carregar conteúdo do último arquivo histórico
+        //    if (Content.Length == 0)
+        //    {
+        //        this.Loga("⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...");
+
+        //        try
+        //        {
+        //            DirectoryInfo dir = new DirectoryInfo(pasta);
+        //            if (dir.Exists)
+        //            {
+        //                FileInfo[] todosArquivos = dir.GetFiles("*^*.txt")
+        //                    .OrderByDescending(f => f.LastWriteTime)
+        //                    .ToArray();
+
+        //                this.Loga($"Encontrados {todosArquivos.Length} arquivos com '^' na pasta");
+
+        //                // ✅ Iterar até encontrar primeiro arquivo com conteúdo NÃO VAZIO
+        //                foreach (FileInfo arquivo in todosArquivos)
+        //                {
+        //                    // Pular o próprio arquivo atual e arquivos com data inválida
+        //                    if (arquivo.FullName == Filename) continue;
+        //                    if (!System.Text.RegularExpressions.Regex.IsMatch(arquivo.Name, @"\d{2}-\d{2}-\d{4}\.txt$")) continue;
+
+        //                    string conteudoHistorico = File.ReadAllText(arquivo.FullName, Encoding.UTF8);
+
+        //                    if (conteudoHistorico.Length > 3) // >3 bytes = conteúdo real além do BOM
+        //                    {
+        //                        Content = conteudoHistorico;
+        //                        controlContentTextBox.Text = Content;
+        //                        controlContentTextBox.BackColor = Color.LightBlue; // Azul = baseado em histórico
+        //                        IsDirty = true;
+        //                        this.Loga($"✅ Conteúdo NÃO VAZIO carregado de: {arquivo.Name} ({Content.Length} bytes)");
+
+        //                        // ✅ SALVAR IMEDIATAMENTE no working copy CORRETO (sem data no nome)
+        //                        File.WriteAllText(workingCopyCorreto, Content, Encoding.UTF8);
+        //                        this.Loga($"✅ Conteúdo salvo no working copy: {workingCopyCorreto}");
+
+        //                        // ✅ Atualizar Filename para o working copy CORRETO
+        //                        this.Filename = workingCopyCorreto;
+        //                        Filename = workingCopyCorreto;
+        //                        IsDirty = false;
+        //                        break;
+        //                    }
+        //                    else
+        //                    {
+        //                        this.Loga($"⚠️ Arquivo ignorado (vazio/BOM apenas): {arquivo.Name}");
+        //                    }
+        //                }
+        //            }
+        //        }
+        //        catch (Exception ex)
+        //        {
+        //            this.Loga("❌ Erro ao buscar conteúdo histórico: " + ex.Message);
+        //        }
+        //    }
+
+        //    if (!string.IsNullOrEmpty(searchText))
+        //    {
+        //        int index = Content.IndexOf(searchText, StringComparison.OrdinalIgnoreCase);
+        //        if (index >= 0)
+        //        {
+        //            controlContentTextBox.SelectionStart = index;
+        //            controlContentTextBox.SelectionLength = searchText.Length;
+        //            if (ativar) controlContentTextBox.Focus();
+        //            controlContentTextBox.ScrollToCaret();
+        //        }
+        //    }
+        //    else
+        //    {
+        //        SelectionStart = 0;
+        //    }
+
+        //    // ✅ Garantir que Filename aponta para o working copy CORRETO
+        //    this.Filename = Filename;
+        //    IsDirty = false;
+        //    toolStripStatusLabel1.Text = "";
+        //    this.AjustaCorFundo();
+        //    this.QtMinutosEsse = 0;
+        //    this.QtMinutos = cIni.ReadInt(Atual, "Tempo", 0);
+        //    this.MotraCaracteres();
+
+        //    // ✅ FORÇAR Carregado = true após qualquer abertura
+        //    this.Carregado = true;
+        //    this.Loga("Open finalizado - Filename=" + this.Filename + ", Carregado=" + this.Carregado + ", Tamanho=" + Content.Length);
+        //}
 
         private void AjustaCorFundo()
         {
@@ -1751,76 +1943,481 @@ namespace Anoteitor
             return todayFile;
         }
 
+        // ✅ MÉTODO 1: Orquestrador principal (32 linhas)
         private void AtuArqASerMostrado()
         {
-            this.Loga("[v2.8] AtuArqASerMostrado");
-            this.Loga("Carregado = " + this.Carregado.ToString());
+            this.Loga("[v2.14] AtuArqASerMostrado");
+            this.Loga($"Carregado = {this.Carregado}, cbArquivos.Text = '{cbArquivos.Text}'");
 
-            if (this.Carregado)
+            if (!this.Carregado || string.IsNullOrEmpty(cbArquivos.Text))
+                return;
+
+            // ✅ CASO ESPECIAL: Recarregar todas as datas
+            if (cbArquivos.Text == "TUDO")
             {
-                Loga("cbArquivos.Text = " + cbArquivos.Text);
+                RecarregarTodasDatas();
+                return;
+            }
 
-                if (cbArquivos.Text.Length > 0)
+            // ✅ TROCA DE DATA: Processar seleção de nova data (CORRIGIDO para respeitar data histórica)
+            if (cbArquivos.Text != this.cbArquivosOld && cbArquivos.Text != "TUDO")
+            {
+                ProcessarSelecaoDeDataHistorica();
+            }
+
+            // ✅ Atualizar subatividades se projeto mudou
+            if (Atual != this.AtualAnt)
+            {
+                this.AtualAnt = this.Atual;
+                VeSeTemSub(Atual);
+            }
+        }
+
+        private void ProcessarSelecaoDeDataHistorica()
+        {
+            // ✅ SALVAR working copy atual ANTES de visualizar histórico
+            if (this.IsDirty)
+            {
+                this.Loga("⚠️ Salvando working copy atual antes de visualizar histórico");
+                this.Save();
+            }
+
+            // ✅ Desabilitar timer durante visualização
+            this.timer1.Enabled = false;
+
+            // ✅ CONSTRUÇÃO DO CAMINHO PARA A DATA SELECIONADA
+            string dataSelecionadaStr = cbArquivos.Text.Replace("/", "-").Replace(".", "-");
+            string nmSUb = string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL"
+                ? "" : this.SUbAtual + "^";
+            string dirSub = string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL"
+                ? "" : @"\" + this.SUbAtual;
+
+            string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
+            string arquivoDataSelecionada = Pasta + @"\" + this.Atual + "^" + nmSUb + dataSelecionadaStr + ".txt";
+
+            this.Loga($"🔍 Tentando abrir arquivo EXATO da data {dataSelecionadaStr}: {arquivoDataSelecionada}");
+
+            string arquivoParaAbrir = null;
+            DateTime dataSelecionada;
+
+            // ✅ TENTATIVA 1: Arquivo EXATO da data selecionada
+            if (File.Exists(arquivoDataSelecionada) && new FileInfo(arquivoDataSelecionada).Length > 3)
+            {
+                arquivoParaAbrir = arquivoDataSelecionada;
+                this.Loga($"✅ Arquivo EXATO encontrado para {dataSelecionadaStr}");
+            }
+            else
+            {
+                this.Loga($"ℹ️ Arquivo EXATO não encontrado/vazio: {arquivoDataSelecionada}");
+
+                // ✅ TENTATIVA 2: Buscar arquivo histórico MAIS PRÓXIMO (<= data selecionada) com conteúdo
+                try
                 {
-                    if (cbArquivos.Text == "TUDO")
+                    if (DateTime.TryParseExact(dataSelecionadaStr, "dd-MM-yyyy", null,
+                        System.Globalization.DateTimeStyles.None, out dataSelecionada))
                     {
-                        string Pasta = this.PastaGeral + @"\" + this.Atual + @"\" + this.SUbAtual;
-                        cbArquivos.Items.Clear();
-                        DirectoryInfo info = new DirectoryInfo(Pasta);
-                        FileInfo[] arquivos = info.GetFiles().OrderBy(p => p.CreationTime).ToArray();
-                        foreach (FileInfo arquivo in arquivos)
+                        DirectoryInfo dir = new DirectoryInfo(Pasta);
+                        if (dir.Exists)
                         {
-                            string nome = arquivo.Name;
-                            DateTime DtCriacao = this.GetDataPeloNome(nome);
-                            string data = DtCriacao.ToShortDateString();
-                            if (nome.IndexOf(this.Atual) > -1)
-                                if (cbArquivos.Items.IndexOf(data) == -1)
-                                    cbArquivos.Items.Add(data);
+                            var arquivosValidos = dir.GetFiles("*^*.txt")
+                                .Where(f =>
+                                {
+                                    var match = Regex.Match(f.Name, @"(\d{2})-(\d{2})-(\d{4})\.txt$");
+                                    if (!match.Success) return false;
+
+                                    if (DateTime.TryParseExact(
+                                        $"{match.Groups[1].Value}-{match.Groups[2].Value}-{match.Groups[3].Value}",
+                                        "dd-MM-yyyy", null, System.Globalization.DateTimeStyles.None,
+                                        out DateTime dataArq))
+                                    {
+                                        return dataArq <= dataSelecionada && f.Length > 3;
+                                    }
+                                    return false;
+                                })
+                                .OrderByDescending(f =>
+                                {
+                                    var match = Regex.Match(f.Name, @"(\d{2})-(\d{2})-(\d{4})\.txt$");
+                                    return DateTime.ParseExact(
+                                        $"{match.Groups[1].Value}-{match.Groups[2].Value}-{match.Groups[3].Value}",
+                                        "dd-MM-yyyy", null);
+                                })
+                                .ToArray();
+
+                            if (arquivosValidos.Length > 0)
+                            {
+                                arquivoParaAbrir = arquivosValidos[0].FullName;
+                                string dataArqFmt = this.GetDataPeloNome(arquivosValidos[0].Name).ToString("dd/MM/yyyy");
+                                this.Loga($"✅ Arquivo histórico MAIS PRÓXIMO encontrado ({dataArqFmt} <= {cbArquivos.Text}): {arquivoParaAbrir}");
+                            }
+                            else
+                            {
+                                this.Loga($"⚠️ Nenhum arquivo com conteúdo encontrado para datas <= {cbArquivos.Text}");
+                            }
                         }
-                        cbArquivos.Text = this.cbArquivosOld;
                     }
-                    else if (cbArquivos.Text != this.cbArquivosOld)
+                }
+                catch (Exception ex)
+                {
+                    this.Loga($"❌ Erro ao buscar arquivo histórico próximo: {ex.Message}");
+                }
+            }
+
+            // ✅ ABRIR arquivo encontrado COM MÉTODO ESPECÍFICO PARA HISTÓRICO (SEM REDIRECIONAMENTO!)
+            if (!string.IsNullOrEmpty(arquivoParaAbrir) && File.Exists(arquivoParaAbrir))
+            {
+                this.Filename = arquivoParaAbrir;
+                this.OpenHistoricalFileOnly(arquivoParaAbrir); // ✅ Método dedicado - NUNCA redireciona para working copy
+                this.cbArquivosOld = cbArquivos.Text;
+
+                this.Loga($"🎨 Conteúdo histórico carregado com fundo AZUL");
+            }
+            else
+            {
+                // Reverter seleção do combo silenciosamente
+                this.Loga($"ℹ️ Mantendo data anterior - nenhum conteúdo válido para {cbArquivos.Text}");
+                cbArquivos.Text = cbArquivosOld;
+            }
+        }
+
+        /// <summary>
+        /// Abre EXATAMENTE o arquivo especificado SEM redirecionamento para working copy
+        /// Usado apenas para visualização de datas históricas
+        /// </summary>
+        private void OpenHistoricalFileOnly(string filePath)
+        {
+            this.Loga($"[v2.14] OpenHistoricalFileOnly: {filePath}");
+
+            try
+            {
+                // ✅ Ler conteúdo DIRETAMENTE do arquivo especificado (sem lógica de working copy)
+                string content = ReadAllText(filePath, null);
+                Content = content;
+                controlContentTextBox.Text = Content;
+
+                // ✅ Configurar estado
+                this.Filename = filePath;
+                this.IsDirty = false;
+                this.Carregado = true;
+
+                // ✅ FORÇAR fundo AZUL para indicar visualização de histórico
+                controlContentTextBox.BackColor = Color.AliceBlue;
+
+                this.MotraCaracteres();
+                this.Loga($"✅ Conteúdo histórico carregado ({Content.Length} caracteres)");
+            }
+            catch (Exception ex)
+            {
+                this.Loga($"❌ Erro ao abrir arquivo histórico: {ex.Message}");
+                MessageBox.Show($"Erro ao abrir arquivo da data selecionada:\n{ex.Message}",
+                               "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        // ✅ MÉTODO 3: Processar troca de data com busca inteligente (48 linhas)
+        private void ProcessarTrocaDeData()
+        {
+            // ✅ SALVAR working copy atual antes de qualquer operação
+            if (this.IsDirty)
+            {
+                this.Loga("⚠️ Salvando working copy atual antes de trocar de data");
+                this.Save();
+            }
+
+            // ✅ Desabilitar timer durante transição
+            this.timer1.Enabled = false;
+
+            // ✅ Construir caminhos
+            string nmSUb = string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL"
+                ? "" : this.SUbAtual + "^";
+            string dirSub = string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL"
+                ? "" : @"\" + this.SUbAtual;
+
+            string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
+            string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
+
+            this.Loga($"📂 Pasta: {Pasta}");
+            this.Loga($"📂 Working copy: {workingCopy}");
+
+            // ✅ Buscar arquivo mais adequado para a data selecionada
+            string arquivoParaAbrir = EncontrarArquivoParaData(Pasta, workingCopy, cbArquivos.Text);
+
+            // ✅ Abrir arquivo com feedback visual apropriado
+            if (!string.IsNullOrEmpty(arquivoParaAbrir) && File.Exists(arquivoParaAbrir))
+            {
+                AbrirArquivoComFeedback(arquivoParaAbrir, workingCopy);
+                this.cbArquivosOld = cbArquivos.Text;
+            }
+            else
+            {
+                this.Loga($"❌ Nenhum arquivo válido encontrado para a data {cbArquivos.Text}");
+                cbArquivos.Text = this.cbArquivosOld; // Reverter seleção
+            }
+        }
+
+        // ✅ MÉTODO 5: Abrir arquivo com feedback visual (18 linhas)
+        private void AbrirArquivoComFeedback(string caminhoArquivo, string workingCopy)
+        {
+            this.Filename = caminhoArquivo;
+            this.Open(this.Filename);
+
+            // ✅ Feedback visual: AZUL para histórico, BRANCO para working copy atual
+            if (caminhoArquivo != workingCopy && caminhoArquivo.EndsWith(".txt"))
+            {
+                controlContentTextBox.BackColor = Color.AliceBlue;
+                this.Loga($"🎨 Fundo AZUL (visualizando histórico)");
+            }
+            else
+            {
+                controlContentTextBox.BackColor = SystemColors.Window;
+                this.Loga($"🎨 Fundo BRANCO (working copy atual)");
+            }
+        }
+
+        // ✅ MÉTODO 4: Busca inteligente por arquivo com conteúdo (36 linhas)
+        private string EncontrarArquivoParaData(string pasta, string workingCopy, string dataSelecionada)
+        {
+            try
+            {
+                DirectoryInfo dir = new DirectoryInfo(pasta);
+                if (!dir.Exists)
+                {
+                    Directory.CreateDirectory(pasta);
+                    this.Loga($"🆕 Pasta criada: {pasta}");
+                    File.WriteAllText(workingCopy, "", Encoding.UTF8);
+                    return workingCopy;
+                }
+
+                // ✅ PRIORIDADE 1: Working copy com conteúdo
+                if (File.Exists(workingCopy) && new FileInfo(workingCopy).Length > 3)
+                {
+                    this.Loga($"✅ Working copy usado (tem conteúdo)");
+                    return workingCopy;
+                }
+
+                // ✅ PRIORIDADE 2: Arquivo histórico MAIS PRÓXIMO com conteúdo
+                FileInfo[] arquivosValidos = dir.GetFiles("*^*.txt")
+                    .Where(f => Regex.IsMatch(f.Name, @"\d{2}-\d{2}-\d{4}\.txt$") && f.Length > 3)
+                    .OrderByDescending(f => f.LastWriteTime)
+                    .ToArray();
+
+                if (arquivosValidos.Length > 0)
+                {
+                    string arquivo = arquivosValidos[0].FullName;
+                    this.Loga($"✅ Arquivo histórico mais recente com conteúdo: {Path.GetFileName(arquivo)}");
+                    return arquivo;
+                }
+
+                // ✅ PRIORIDADE 3: Criar working copy vazio
+                this.Loga($"🆕 Nenhum arquivo com conteúdo encontrado. Criando working copy vazio.");
+                File.WriteAllText(workingCopy, "", Encoding.UTF8);
+                return workingCopy;
+            }
+            catch (Exception ex)
+            {
+                this.Loga($"❌ Erro na busca inteligente: {ex.Message}");
+                if (!File.Exists(workingCopy))
+                    File.WriteAllText(workingCopy, "", Encoding.UTF8);
+                return workingCopy;
+            }
+        }
+
+        // ✅ MÉTODO 2: Recarregar todas as datas do histórico (28 linhas)
+        private void RecarregarTodasDatas()
+        {
+            string Pasta = this.PastaGeral + @"\" + this.Atual + @"\" + this.SUbAtual;
+
+            try
+            {
+                cbArquivos.Items.Clear();
+                DirectoryInfo info = new DirectoryInfo(Pasta);
+
+                if (info.Exists)
+                {
+                    FileInfo[] arquivos = info.GetFiles()
+                        .Where(f => f.Name.IndexOf(this.Atual) > -1 &&
+                                   Regex.IsMatch(f.Name, @"\d{2}-\d{2}-\d{4}\.txt$"))
+                        .OrderBy(p => p.CreationTime)
+                        .ToArray();
+
+                    foreach (FileInfo arquivo in arquivos)
                     {
-                        // ✅ SALVAR working copy atual ANTES de visualizar histórico
-                        if (this.IsDirty)
-                        {
-                            this.Loga("⚠️ Salvando working copy atual antes de visualizar histórico");
-                            this.Save();
-                        }
-
-                        // ✅ Desabilitar timer durante visualização de histórico
-                        this.timer1.Enabled = false;
-
-                        // ✅ CONSTRUÇÃO DO CAMINHO DO ARQUIVO HISTÓRICO (sem working copy)
-                        string dataSelecionada = cbArquivos.Text.Replace("/", "-").Replace(".", "-");
-                        string nmSUb = "";
-                        string dirSub = "";
-
-                        if (!string.IsNullOrEmpty(this.SUbAtual) && this.SUbAtual != "GERAL")
-                        {
-                            nmSUb = this.SUbAtual + "^";
-                            dirSub = @"\" + this.SUbAtual;
-                        }
-
-                        string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
-                        string arquivoHistorico = Pasta + @"\" + this.Atual + "^" + nmSUb + dataSelecionada + ".txt";
-
-                        this.Loga($"🔍 Tentando abrir arquivo HISTÓRICO da data {dataSelecionada}: {arquivoHistorico}");
-
-                        // ✅ USAR MÉTODO ESPECÍFICO PARA HISTÓRICO (SEM SUBSTITUIR PELO WORKING COPY!)
-                        OpenHistoricalFile(arquivoHistorico);
-                        this.cbArquivosOld = cbArquivos.Text;
-
-                        // ✅ Forçar fundo AZUL já no método OpenHistoricalFile (feito acima)
-                    }
-                    if (Atual != this.AtualAnt)
-                    {
-                        this.AtualAnt = this.Atual;
-                        VeSeTemSub(Atual);
+                        DateTime DtCriacao = this.GetDataPeloNome(arquivo.Name);
+                        string data = DtCriacao.ToShortDateString();
+                        if (cbArquivos.Items.IndexOf(data) == -1)
+                            cbArquivos.Items.Add(data);
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                this.Loga($"❌ Erro ao recarregar datas: {ex.Message}");
+            }
+
+            cbArquivos.Text = this.cbArquivosOld;
         }
+
+        //private void AtuArqASerMostrado()
+        //{
+        //    this.Loga("[v2.10] AtuArqASerMostrado");
+        //    this.Loga("Carregado = " + this.Carregado.ToString());
+
+        //    if (this.Carregado)
+        //    {
+        //        Loga("cbArquivos.Text = " + cbArquivos.Text);
+
+        //        if (cbArquivos.Text.Length > 0)
+        //        {
+        //            if (cbArquivos.Text == "TUDO")
+        //            {
+        //                string Pasta = this.PastaGeral + @"\" + this.Atual + @"\" + this.SUbAtual;
+        //                cbArquivos.Items.Clear();
+        //                DirectoryInfo info = new DirectoryInfo(Pasta);
+        //                FileInfo[] arquivos = info.GetFiles().OrderBy(p => p.CreationTime).ToArray();
+        //                foreach (FileInfo arquivo in arquivos)
+        //                {
+        //                    string nome = arquivo.Name;
+        //                    DateTime DtCriacao = this.GetDataPeloNome(nome);
+        //                    string data = DtCriacao.ToShortDateString();
+        //                    if (nome.IndexOf(this.Atual) > -1)
+        //                        if (cbArquivos.Items.IndexOf(data) == -1)
+        //                            cbArquivos.Items.Add(data);
+        //                }
+        //                cbArquivos.Text = this.cbArquivosOld;
+        //            }
+        //            else if (cbArquivos.Text != this.cbArquivosOld)
+        //            {
+        //                // ✅ SALVAR working copy atual antes de visualizar histórico
+        //                if (this.IsDirty)
+        //                {
+        //                    this.Loga("⚠️ Salvando working copy atual antes de visualizar");
+        //                    this.Save();
+        //                }
+
+        //                // ✅ Desabilitar timer durante transição
+        //                this.timer1.Enabled = false;
+
+        //                // ✅ CONSTRUÇÃO DOS CAMINHOS
+        //                string nmSUb = "";
+        //                string dirSub = "";
+        //                if (!string.IsNullOrEmpty(this.SUbAtual) && this.SUbAtual != "GERAL")
+        //                {
+        //                    nmSUb = this.SUbAtual + "^";
+        //                    dirSub = @"\" + this.SUbAtual;
+        //                }
+
+        //                string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
+        //                string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
+
+        //                this.Loga($"📂 Pasta: {Pasta}");
+        //                this.Loga($"📂 Working copy: {workingCopy}");
+
+        //                // ✅ BUSCA INTELIGENTE: Lista todos os arquivos válidos ordenados por data de modificação
+        //                string arquivoParaAbrir = null;
+
+        //                try
+        //                {
+        //                    DirectoryInfo dir = new DirectoryInfo(Pasta);
+        //                    if (dir.Exists)
+        //                    {
+        //                        // ✅ Buscar TODOS os arquivos com ^ no nome
+        //                        FileInfo[] todosArquivos = dir.GetFiles("*^*.txt")
+        //                            .OrderByDescending(f => f.LastWriteTime) // Mais recente primeiro
+        //                            .ToArray();
+
+        //                        this.Loga($"🔍 Encontrados {todosArquivos.Length} arquivos na pasta");
+
+        //                        // ✅ PRIORIDADE 1: Working copy SEM data
+        //                        if (File.Exists(workingCopy))
+        //                        {
+        //                            FileInfo wcInfo = new FileInfo(workingCopy);
+        //                            if (wcInfo.Length > 3) // Conteúdo real além do BOM
+        //                            {
+        //                                arquivoParaAbrir = workingCopy;
+        //                                this.Loga($"✅ Working copy encontrado com conteúdo ({wcInfo.Length} bytes)");
+        //                            }
+        //                            else
+        //                            {
+        //                                this.Loga($"⚠️ Working copy vazio (apenas BOM de {wcInfo.Length} bytes)");
+        //                            }
+        //                        }
+
+        //                        // ✅ PRIORIDADE 2: Arquivos históricos com conteúdo real
+        //                        if (string.IsNullOrEmpty(arquivoParaAbrir))
+        //                        {
+        //                            foreach (FileInfo arquivo in todosArquivos)
+        //                            {
+        //                                // Verificar se tem data válida no nome
+        //                                if (!Regex.IsMatch(arquivo.Name, @"\d{2}-\d{2}-\d{4}\.txt$"))
+        //                                    continue;
+
+        //                                // Verificar se tem conteúdo real (não apenas BOM)
+        //                                if (arquivo.Length > 3)
+        //                                {
+        //                                    arquivoParaAbrir = arquivo.FullName;
+        //                                    this.Loga($"✅ Arquivo histórico encontrado com conteúdo: {arquivo.Name} ({arquivo.Length} bytes)");
+        //                                    break;
+        //                                }
+        //                                else
+        //                                {
+        //                                    this.Loga($"⚠️ Arquivo ignorado (vazio/BOM apenas): {arquivo.Name} ({arquivo.Length} bytes)");
+        //                                }
+        //                            }
+        //                        }
+
+        //                        // ✅ PRIORIDADE 3: Criar novo arquivo se nada encontrado
+        //                        if (string.IsNullOrEmpty(arquivoParaAbrir))
+        //                        {
+        //                            arquivoParaAbrir = workingCopy;
+        //                            File.WriteAllText(arquivoParaAbrir, "", Encoding.UTF8);
+        //                            this.Loga($"🆕 Nenhum arquivo com conteúdo encontrado. Criando novo: {arquivoParaAbrir}");
+        //                        }
+        //                    }
+        //                    else
+        //                    {
+        //                        // Pasta não existe - criar working copy
+        //                        Directory.CreateDirectory(Pasta);
+        //                        arquivoParaAbrir = workingCopy;
+        //                        File.WriteAllText(arquivoParaAbrir, "", Encoding.UTF8);
+        //                        this.Loga($"🆕 Pasta não existia. Criando: {arquivoParaAbrir}");
+        //                    }
+        //                }
+        //                catch (Exception ex)
+        //                {
+        //                    this.Loga($"❌ Erro ao buscar arquivos: {ex.Message}");
+        //                    // Fallback seguro
+        //                    arquivoParaAbrir = workingCopy;
+        //                    if (!File.Exists(arquivoParaAbrir))
+        //                        File.WriteAllText(arquivoParaAbrir, "", Encoding.UTF8);
+        //                }
+
+        //                // ✅ ABRIR o arquivo selecionado
+        //                if (!string.IsNullOrEmpty(arquivoParaAbrir) && File.Exists(arquivoParaAbrir))
+        //                {
+        //                    this.Filename = arquivoParaAbrir;
+        //                    this.Open(this.Filename);
+        //                    this.cbArquivosOld = cbArquivos.Text;
+
+        //                    // ✅ Forçar fundo AZUL se for arquivo histórico
+        //                    if (arquivoParaAbrir != workingCopy && arquivoParaAbrir.EndsWith(".txt"))
+        //                    {
+        //                        controlContentTextBox.BackColor = Color.AliceBlue;
+        //                        this.Loga($"🎨 Fundo AZUL para arquivo histórico");
+        //                    }
+        //                }
+        //                else
+        //                {
+        //                    this.Loga($"❌ Arquivo para abrir não encontrado: {arquivoParaAbrir}");
+        //                }
+        //            }
+
+        //            if (Atual != this.AtualAnt)
+        //            {
+        //                this.AtualAnt = this.Atual;
+        //                VeSeTemSub(Atual);
+        //            }
+        //        }
+        //    }
+        //}
 
         private void cbArquivos_DropDownClosed(object sender, EventArgs e)
         {
