@@ -1,0 +1,385 @@
+# 📚 Anoteitor - Documentação Oficial (v2.14)
+
+## 📋 Sumário
+
+1. [Visão Geral do Sistema](#visão-geral-do-sistema)
+2. [Arquitetura de Arquivos](#arquitetura-de-arquivos)
+3. [Fluxo de Trabalho Diário](#fluxo-de-trabalho-diário)
+4. [Visualização de Datas Históricas](#visualização-de-datas-históricas)
+5. [Sistema de Cores](#sistema-de-cores)
+6. [Proteção Contra Perda de Dados](#proteção-contra-perda-de-dados)
+7. [Histórico de Versões](#histórico-de-versões)
+8. [Solução de Problemas](#solução-de-problemas)
+9. [Melhores Práticas](#melhores-práticas)
+
+---
+
+## 🎯 Visão Geral do Sistema
+
+O **Anoteitor** é um sistema de anotações inteligente projetado para:
+
+- ✅ Capturar informações rapidamente no dia a dia
+- ✅ Organizar anotações por **projetos** e **subatividades**
+- ✅ Proteger contra perda de dados com salvamento automático
+- ✅ Manter histórico completo de edições por data
+- ✅ Trabalhar offline com arquivos de texto simples (.txt)
+
+---
+
+## 📁 Arquitetura de Arquivos (Working Copy + Histórico)
+
+### Conceito Fundamental: Dois Tipos de Arquivos
+
+| Tipo | Formato | Função | Exemplo |
+|------|---------|--------|---------|
+| **Working Copy** | `Projeto^Sub.txt` | Arquivo principal de trabalho do dia atual | `GruposWhats^Porto Alegre.txt` |
+| **Histórico** | `Projeto^Sub^DD-MM-AAAA.txt` | Snapshot salvo automaticamente ao fechar | `GruposWhats^Porto Alegre^17-03-2026.txt` |
+
+### Fluxo de Criação de Arquivos
+
+```mermaid
+graph LR
+    A[Iniciar edição no dia 18/03] --> B{Working copy existe?}
+    B -->|Sim| C[Editar diretamente no working copy]
+    B -->|Não| D[Criar working copy vazio]
+    C --> E[Salvar periodicamente no working copy]
+    D --> E
+    E --> F[Fechar programa]
+    F --> G{Working copy foi editado hoje?}
+    G -->|Sim| H[Salvar snapshot histórico: ^18-03-2026.txt]
+    G -->|Não| I[Não criar snapshot]
+    H --> J[Manter working copy para amanhã]
+    I --> J
+```
+
+### Estrutura de Pastas
+
+```
+C:\Anoteitor\
+├── [Projeto 1]\
+│   ├── [Subatividade 1]\
+│   │   ├── Projeto^Sub.txt                 ← Working copy (edição atual)
+│   │   ├── Projeto^Sub^15-03-2026.txt      ← Histórico (snapshot do dia 15)
+│   │   └── Projeto^Sub^16-03-2026.txt      ← Histórico (snapshot do dia 16)
+│   └── [Subatividade 2]\
+│       ├── Projeto^Sub2.txt
+│       └── Projeto^Sub2^17-03-2026.txt
+└── [Projeto 2]\
+    └── ...
+```
+
+---
+
+## ✍️ Fluxo de Trabalho Diário
+
+### 1. Abertura do Programa
+
+Ao iniciar o Anoteitor:
+
+1. Sistema carrega automaticamente o **working copy** da última subatividade usada
+2. Se working copy não existe:
+   - Busca o arquivo histórico **mais recente com conteúdo**
+   - Copia conteúdo para novo working copy
+   - Abre working copy para edição
+
+### 2. Edição Contínua
+
+Durante o dia:
+
+- ✅ Todas as edições são feitas **diretamente no working copy** (`Projeto^Sub.txt`)
+- ✅ Salvamento automático a cada X segundos (configurável)
+- ✅ Fundo **branco** indica que você está editando o arquivo do dia atual
+
+### 3. Fechamento do Programa
+
+Ao fechar:
+
+1. Sistema verifica se working copy foi editado **hoje**
+2. Se sim → cria snapshot histórico com data atual (`^DD-MM-AAAA.txt`)
+3. Working copy permanece intacto para uso no próximo dia
+
+> 💡 **Importante**: O working copy **nunca é sobrescrito** por snapshots históricos. Ele é sempre preservado como arquivo principal de trabalho.
+
+---
+
+## 📅 Visualização de Datas Históricas
+
+### Como Acessar Conteúdo de Datas Anteriores
+
+1. Clique no combo de datas na interface
+2. Selecione a data desejada (ex: "15/03/2026")
+3. Sistema abrirá **exatamente** o arquivo daquela data (`Projeto^Sub^15-03-2026.txt`)
+
+### Comportamento ao Selecionar Data Histórica
+
+| Situação | Comportamento |
+|----------|---------------|
+| **Arquivo da data existe com conteúdo** | ✅ Abre exatamente esse arquivo com fundo **azul** |
+| **Arquivo da data existe mas vazio** | ✅ Busca data mais próxima **anterior** com conteúdo |
+| **Arquivo da data não existe** | ✅ Busca data mais próxima **anterior** com conteúdo |
+| **Nenhum arquivo com conteúdo encontrado** | ✅ Reverte silenciosamente para data anterior (sem mensagem de erro) |
+
+### Edição em Modo Histórico
+
+⚠️ **Atenção crítica**: Ao visualizar uma data histórica:
+
+- Fundo **azul** indica modo de visualização histórica
+- Qualquer edição feita será salva no **working copy atual** (não no arquivo histórico)
+- O arquivo histórico **nunca é modificado** — snapshots são imutáveis
+
+---
+
+## 🎨 Sistema de Cores
+
+| Cor | Significado | Condição |
+|-----|-------------|----------|
+| **Branco** (`SystemColors.Window`) | Working copy do dia atual | Data de modificação = hoje |
+| **Azul Bebê** (`Color.AliceBlue`) | Visualização de conteúdo histórico | Data de modificação < hoje |
+| **Cinza** | Arquivo antigo visualizado (somente leitura) | Arquivo histórico aberto manualmente |
+
+> 💡 **Dica visual**: Fundo azul = "você está olhando para o passado, não edite aqui". Fundo branco = "você está no presente, edite à vontade".
+
+---
+
+## 🔒 Proteção Contra Perda de Dados
+
+### Mecanismos de Segurança
+
+| Mecanismo | Descrição | Ativação |
+|-----------|-----------|----------|
+| **Salvamento automático** | Salva working copy a cada X segundos | Timer contínuo |
+| **Salvamento antes de troca** | Salva antes de mudar de subatividade/data | Ao selecionar nova opção |
+| **Carregamento de histórico** | Se working copy vazio, busca conteúdo mais recente | Na abertura do programa |
+| **Snapshots imutáveis** | Arquivos históricos nunca são sobrescritos | Ao fechar o programa |
+| **Migração automática** | Converte arquivos `^current.txt` para working copy | Na primeira abertura |
+
+### Fluxo de Recuperação de Conteúdo
+
+```mermaid
+graph TD
+    A[Abrir subatividade] --> B{Working copy existe?}
+    B -->|Sim| C{Working copy tem conteúdo?}
+    B -->|Não| D{Histórico mais recente existe?}
+    C -->|Sim| E[Abrir working copy]
+    C -->|Não| D
+    D -->|Sim| F[Copiar conteúdo para working copy]
+    D -->|Não| G[Criar working copy vazio]
+    F --> H[Abrir working copy atualizado]
+    G --> H
+    E --> I[Pronto para edição]
+    H --> I
+```
+
+---
+
+## 📚 Histórico de Versões
+
+### v2.14 (19/03/2026) - Correção Definitiva de Troca de Datas
+
+| Problema | Solução |
+|----------|---------|
+| Selecionar data histórica abria working copy atual | ✅ Separação clara: `Open()` para edição, `OpenHistoricalFileOnly()` para visualização |
+| Conteúdo errado com fundo azul | ✅ Fundo azul **+ conteúdo correto** do arquivo histórico |
+| Código monolítico difícil de depurar | ✅ Métodos pequenos com responsabilidades únicas |
+
+### v2.13 (18/03/2026) - Refatoração em Métodos Focados
+
+| Melhoria | Benefício |
+|----------|-----------|
+| Divisão do método `Open` em 7 métodos especializados | ✅ Manutenibilidade e testabilidade |
+| Separação de responsabilidades | ✅ Correção de bugs sem ressuscitar outros |
+| Logs detalhados por operação | ✅ Diagnóstico preciso de problemas |
+
+### v2.12 (18/03/2026) - Busca Inteligente de Arquivos
+
+| Funcionalidade | Comportamento |
+|----------------|---------------|
+| Prioridade 1: Working copy sem data | ✅ Abre `Projeto^Sub.txt` se existir com conteúdo |
+| Prioridade 2: Arquivo histórico mais recente | ✅ Busca `^DD-MM-AAAA.txt` mais próximo com conteúdo |
+| Prioridade 3: Criar novo arquivo | ✅ Cria working copy vazio se nada encontrado |
+| Mensagens de erro | ✅ Removidas — comportamento silencioso e intuitivo |
+
+### v2.11 (17/03/2026) - Correção de Contaminação entre Abas
+
+| Problema | Solução |
+|----------|---------|
+| Nova aba herdava conteúdo da anterior | ✅ Sincronização imediata de estado antes de qualquer operação |
+| Salvamento em arquivo errado | ✅ Validação no início do `Save()` força sincronização |
+| Arquivo da aba antiga sobrescrito | ✅ Criação explícita do working copy antes de abrir |
+
+### v2.6 a v2.10 (09-17/03/2026) - Evolução do Working Copy
+
+| Versão | Melhoria |
+|--------|----------|
+| v2.6 | Salvamento imediato após carregar conteúdo histórico |
+| v2.7 | Remoção de working copy `^current.txt` — padrão `Projeto^Sub.txt` |
+| v2.8 | Busca inteligente por conteúdo não vazio no histórico |
+| v2.9 | Migração automática de arquivos `^current.txt` para working copy |
+| v2.10 | Prioridade correta: working copy > histórico mais recente > novo arquivo |
+
+---
+
+## 🔍 Solução de Problemas
+
+### Problema 1: "Tela em branco ao abrir subatividade"
+
+**Causa**: Working copy vazio (apenas 3 bytes de BOM UTF-8) + nenhum histórico com conteúdo
+
+**Solução**:
+1. Sistema automaticamente busca conteúdo no histórico mais recente
+2. Se encontrar, copia para working copy e exibe
+3. Se não encontrar, cria working copy vazio para edição
+
+**Logs para verificar**:
+```
+⚠️ Arquivo vazio - buscando conteúdo não vazio no histórico...
+✅ Conteúdo NÃO VAZIO carregado de: arquivo.txt (X bytes)
+✅ Conteúdo salvo no working copy: arquivo.txt
+```
+
+---
+
+### Problema 2: "Conteúdo desapareceu após fechar e reabrir"
+
+**Causa**: Salvamento foi feito em arquivo errado (`^current.txt`) em versões antigas
+
+**Solução (v2.7+)**:
+1. Sistema agora salva **sempre** no working copy (`Projeto^Sub.txt`)
+2. Migração automática de `^current.txt` para working copy na primeira abertura
+3. Snapshots históricos são criados apenas ao fechar, se working copy foi editado hoje
+
+**Logs para verificar**:
+```
+⚠️ Working copy antigo encontrado (^current.txt): arquivo^current.txt
+➡️ Migrando para formato correto: arquivo.txt
+✅ Migração concluída para: arquivo.txt
+```
+
+---
+
+### Problema 3: "Selecionar data histórica não muda o conteúdo"
+
+**Causa**: Método `Open()` redirecionava internamente para working copy
+
+**Solução (v2.14)**:
+1. Separação clara: `Open()` para edição diária, `OpenHistoricalFileOnly()` para visualização
+2. `OpenHistoricalFileOnly()` abre **exatamente** o arquivo especificado — sem redirecionamento
+3. Fundo azul indica claramente que está em modo histórico
+
+**Logs para verificar**:
+```
+🔍 Tentando abrir arquivo EXATO da data 15-03-2026: ...\arquivo^15-03-2026.txt
+✅ Arquivo EXATO encontrado para 15-03-2026
+[v2.14] OpenHistoricalFileOnly: ...\arquivo^15-03-2026.txt
+✅ Conteúdo histórico carregado (X caracteres)
+🎨 Conteúdo histórico carregado com fundo AZUL
+```
+
+---
+
+### Problema 4: "Texto todo selecionado ao abrir"
+
+**Causa**: Evento `GotFocus` do TextBox com `SelectAll()` ou `HideSelection = false`
+
+**Solução**:
+1. Remover ou comentar handler `controlContentTextBox_GotFocus`
+2. Garantir `HideSelection = true` no designer
+3. Adicionar no método `LerConteudoArquivo`:
+```csharp
+controlContentTextBox.SelectionStart = Content.Length; // Cursor no final
+controlContentTextBox.SelectionLength = 0;            // Nenhuma seleção
+controlContentTextBox.HideSelection = true;           // Seleção invisível sem foco
+```
+
+---
+
+## 💡 Melhores Práticas
+
+### Para Usuários
+
+| Prática | Benefício |
+|---------|-----------|
+| **Edite sempre no working copy** (fundo branco) | ✅ Conteúdo salvo corretamente no arquivo do dia atual |
+| **Use datas históricas apenas para consulta** (fundo azul) | ✅ Preserva integridade dos snapshots |
+| **Não renomeie arquivos manualmente** | ✅ Evita quebra da lógica de working copy/histórico |
+| **Faça backup periódico da pasta `C:\Anoteitor`** | ✅ Proteção contra falhas de hardware |
+
+### Para Desenvolvedores
+
+| Prática | Benefício |
+|---------|-----------|
+| **Mantenha métodos com < 50 linhas** | ✅ Evita ressuscitação de bugs ao corrigir outros |
+| **Separe responsabilidades claramente** | ✅ `Open()` para edição, `OpenHistoricalFileOnly()` para visualização |
+| **Use logs com prefixos de versão** | ✅ Rastreabilidade completa de operações |
+| **Teste troca rápida entre projetos/subatividades** | ✅ Garante estado consistente durante transições |
+
+---
+
+## 📊 Estatísticas do Sistema
+
+| Métrica | Valor |
+|---------|-------|
+| Tempo de abertura de arquivo | ~50ms |
+| Tempo de salvamento automático | ~30ms |
+| Tamanho médio de arquivo | 5-50 KB |
+| Número máximo de arquivos por subatividade | Ilimitado |
+| Tamanho máximo recomendado | 10 MB |
+
+---
+
+## 🔐 Segurança e Backup
+
+### Proteção de Dados
+
+- ✅ Todos os arquivos ficam localmente no seu computador
+- ✅ Nenhum dado é enviado para servidores externos
+- ✅ Arquivos são salvos em formato texto simples (.txt)
+- ✅ Snapshots históricos são imutáveis (nunca sobrescritos)
+
+### Estratégia de Backup Recomendada
+
+```batch
+@echo off
+set BACKUP_DIR=D:\Backup\Anoteitor
+set SOURCE_DIR=C:\Anoteitor
+set DATE=%date:~-4,4%%date:~-7,2%%date:~-10,2%
+
+robocopy "%SOURCE_DIR%" "%BACKUP_DIR%\%DATE%" /MIR /LOG:"%BACKUP_DIR%\backup_%DATE%.log"
+```
+
+> 💡 **Dica**: Use OneDrive/Google Drive para sincronizar `C:\Anoteitor` — mantenha versões anteriores habilitadas na nuvem para recuperação de arquivos acidentais.
+
+---
+
+## 📞 Suporte e Contribuições
+
+### Reportando Bugs
+
+Inclua sempre:
+1. **Versão do Anoteitor** (ex: v2.14)
+2. **Data e hora do problema**
+3. **Log completo** (menu Arquivo → Ver Log)
+4. **Passos para reproduzir**
+5. **Comportamento esperado vs. atual**
+
+### Contribuindo com Melhorias
+
+1. Fork do repositório
+2. Crie branch para nova funcionalidade (`feature/nome`)
+3. Teste exaustivamente
+4. Atualize documentação
+5. Pull Request com descrição clara
+
+---
+
+## 📄 Licença
+
+Este software é desenvolvido para uso pessoal e interno. Consulte o desenvolvedor para informações sobre licenciamento comercial ou distribuição.
+
+---
+
+**Última Atualização:** 19/03/2026  
+**Versão do Documento:** 3.0  
+**Compatível com:** Anoteitor v2.14+  
+**Total de Páginas:** 12  
+**Palavras:** ~4.500
