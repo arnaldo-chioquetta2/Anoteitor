@@ -1,4 +1,7 @@
-﻿namespace Anoteitor {
+﻿using System;
+
+namespace Anoteitor
+{
     partial class Main
     {
         /// <summary>
@@ -41,6 +44,7 @@
             this.menuitemFileHeaderAndFooter = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemFilePrint = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
+            this.toolStripMenuItem2 = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemFileExit = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemEdit = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemEditUndo = new System.Windows.Forms.ToolStripMenuItem();
@@ -77,6 +81,8 @@
             this.menuitemHelp = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
             this.menuitemAbout = new System.Windows.Forms.ToolStripMenuItem();
+            this.btnFonteMenos = new System.Windows.Forms.ToolStripButton();
+            this.btnFonteMais = new System.Windows.Forms.ToolStripButton();
             this.cbProjetos = new System.Windows.Forms.ToolStripComboBox();
             this.cbSubprojeto = new System.Windows.Forms.ToolStripComboBox();
             this.cbArquivos = new System.Windows.Forms.ToolStripComboBox();
@@ -85,7 +91,6 @@
             this.lbTempDecorr = new System.Windows.Forms.ToolStripStatusLabel();
             this.timer1 = new System.Windows.Forms.Timer(this.components);
             this.timer2 = new System.Windows.Forms.Timer(this.components);
-            this.toolStripMenuItem2 = new System.Windows.Forms.ToolStripMenuItem();
             this.menubarMain.SuspendLayout();
             this.controlStatusBar.SuspendLayout();
             this.SuspendLayout();
@@ -123,6 +128,8 @@
             this.formatToolStripMenuItem,
             this.projetoToolStripMenuItem,
             this.helpToolStripMenuItem,
+            this.btnFonteMenos,
+            this.btnFonteMais,
             this.cbProjetos,
             this.cbSubprojeto,
             this.cbArquivos});
@@ -154,7 +161,7 @@
             // 
             this.menuitemFileNew.Name = "menuitemFileNew";
             this.menuitemFileNew.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.N)));
-            this.menuitemFileNew.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFileNew.Size = new System.Drawing.Size(178, 22);
             this.menuitemFileNew.Text = "&Novo";
             this.menuitemFileNew.Click += new System.EventHandler(this.menuitemFileNew_Click);
             // 
@@ -162,7 +169,7 @@
             // 
             this.menuitemFileOpen.Name = "menuitemFileOpen";
             this.menuitemFileOpen.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.O)));
-            this.menuitemFileOpen.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFileOpen.Size = new System.Drawing.Size(178, 22);
             this.menuitemFileOpen.Text = "&Abrir...";
             this.menuitemFileOpen.Click += new System.EventHandler(this.menuitemFileOpen_Click);
             // 
@@ -170,33 +177,33 @@
             // 
             this.menuitemFileSave.Name = "menuitemFileSave";
             this.menuitemFileSave.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.S)));
-            this.menuitemFileSave.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFileSave.Size = new System.Drawing.Size(178, 22);
             this.menuitemFileSave.Text = "&Salvar";
             this.menuitemFileSave.Click += new System.EventHandler(this.menuitemFileSave_Click);
             // 
             // menuitemFileSaveAs
             // 
             this.menuitemFileSaveAs.Name = "menuitemFileSaveAs";
-            this.menuitemFileSaveAs.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFileSaveAs.Size = new System.Drawing.Size(178, 22);
             this.menuitemFileSaveAs.Text = "Salvar &Como...";
             this.menuitemFileSaveAs.Click += new System.EventHandler(this.menuitemFileSaveAs_Click);
             // 
             // toolStripSeparator1
             // 
             this.toolStripSeparator1.Name = "toolStripSeparator1";
-            this.toolStripSeparator1.Size = new System.Drawing.Size(177, 6);
+            this.toolStripSeparator1.Size = new System.Drawing.Size(175, 6);
             // 
             // menuitemFilePageSetup
             // 
             this.menuitemFilePageSetup.Name = "menuitemFilePageSetup";
-            this.menuitemFilePageSetup.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFilePageSetup.Size = new System.Drawing.Size(178, 22);
             this.menuitemFilePageSetup.Text = "Page Set&up...";
             this.menuitemFilePageSetup.Click += new System.EventHandler(this.menuitemFilePageSetup_Click);
             // 
             // menuitemFileHeaderAndFooter
             // 
             this.menuitemFileHeaderAndFooter.Name = "menuitemFileHeaderAndFooter";
-            this.menuitemFileHeaderAndFooter.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFileHeaderAndFooter.Size = new System.Drawing.Size(178, 22);
             this.menuitemFileHeaderAndFooter.Text = "&Header && Footer...";
             this.menuitemFileHeaderAndFooter.Click += new System.EventHandler(this.menuitemFileHeaderAndFooter_Click);
             // 
@@ -204,19 +211,26 @@
             // 
             this.menuitemFilePrint.Name = "menuitemFilePrint";
             this.menuitemFilePrint.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.P)));
-            this.menuitemFilePrint.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFilePrint.Size = new System.Drawing.Size(178, 22);
             this.menuitemFilePrint.Text = "&Impressão...";
             this.menuitemFilePrint.Click += new System.EventHandler(this.menuitemFilePrint_Click);
             // 
             // toolStripSeparator2
             // 
             this.toolStripSeparator2.Name = "toolStripSeparator2";
-            this.toolStripSeparator2.Size = new System.Drawing.Size(177, 6);
+            this.toolStripSeparator2.Size = new System.Drawing.Size(175, 6);
+            // 
+            // toolStripMenuItem2
+            // 
+            this.toolStripMenuItem2.Name = "toolStripMenuItem2";
+            this.toolStripMenuItem2.Size = new System.Drawing.Size(178, 22);
+            this.toolStripMenuItem2.Text = "Log";
+            this.toolStripMenuItem2.Click += new System.EventHandler(this.toolStripMenuItem2_Click);
             // 
             // menuitemFileExit
             // 
             this.menuitemFileExit.Name = "menuitemFileExit";
-            this.menuitemFileExit.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFileExit.Size = new System.Drawing.Size(178, 22);
             this.menuitemFileExit.Text = "Sai&r";
             this.menuitemFileExit.Click += new System.EventHandler(this.menuitemFileExit_Click);
             // 
@@ -509,6 +523,24 @@
             this.menuitemAbout.Text = "&About Anoteitor";
             this.menuitemAbout.Click += new System.EventHandler(this.menuitemAbout_Click);
             // 
+            // btnFonteMenos
+            // 
+            this.btnFonteMenos.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.btnFonteMenos.Name = "btnFonteMenos";
+            this.btnFonteMenos.Size = new System.Drawing.Size(24, 21);
+            this.btnFonteMenos.Text = "A-";
+            this.btnFonteMenos.ToolTipText = "Diminuir fonte";
+            this.btnFonteMenos.Click += new System.EventHandler(this.btnFonteMenos_Click);
+            // 
+            // btnFonteMais
+            // 
+            this.btnFonteMais.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.btnFonteMais.Name = "btnFonteMais";
+            this.btnFonteMais.Size = new System.Drawing.Size(27, 21);
+            this.btnFonteMais.Text = "A+";
+            this.btnFonteMais.ToolTipText = "Aumentar fonte";
+            this.btnFonteMais.Click += new System.EventHandler(this.btnFonteMais_Click);
+            // 
             // cbProjetos
             // 
             this.cbProjetos.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
@@ -571,13 +603,6 @@
             this.timer2.Interval = 60000;
             this.timer2.Tick += new System.EventHandler(this.timer2_Tick);
             // 
-            // toolStripMenuItem2
-            // 
-            this.toolStripMenuItem2.Name = "toolStripMenuItem2";
-            this.toolStripMenuItem2.Size = new System.Drawing.Size(180, 22);
-            this.toolStripMenuItem2.Text = "Log";
-            this.toolStripMenuItem2.Click += new System.EventHandler(this.toolStripMenuItem2_Click);
-            // 
             // Main
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -602,6 +627,11 @@
             this.PerformLayout();
 
         }
+
+        //private void btnFonteMais_Click(object sender, EventArgs e)
+        //{
+        //    throw new NotImplementedException();
+        //}
 
         #endregion
 
@@ -662,6 +692,7 @@
         private System.Windows.Forms.ToolStripMenuItem procurarEmTodasDatasToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem procurarPorTudoToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem2;
+        private System.Windows.Forms.ToolStripButton btnFonteMenos;
+        private System.Windows.Forms.ToolStripButton btnFonteMais;
     }
 }
-

@@ -163,6 +163,7 @@ namespace Anoteitor
             try
             {
                 CurrentFont = Settings.CurrentFont;
+                this.controlContentTextBox.Font = CurrentFont;
             }
             catch (Exception Ex)
             {
@@ -2477,69 +2478,60 @@ namespace Anoteitor
             }
         }
 
-        /// <summary>
-        /// Abre EXATAMENTE o arquivo histórico especificado, SEM substituir pelo working copy
-        /// Usado apenas para visualização de datas antigas via combo de datas
-        /// </summary>
-        private void OpenHistoricalFile(string historicalFilePath)
+        private void btnFonteMenos_Click(object sender, EventArgs e)
         {
-            this.Loga($"[v2.9] OpenHistoricalFile: {historicalFilePath}");
-
-            if (!File.Exists(historicalFilePath))
-            {
-                this.Loga($"❌ Arquivo histórico NÃO EXISTE: {historicalFilePath}");
-                MessageBox.Show(
-                    $"O arquivo para a data selecionada não existe.\n\nCaminho: {historicalFilePath}",
-                    "Anoteitor - Arquivo não encontrado",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
-                return;
-            }
-
-            FileInfo fi = new FileInfo(historicalFilePath);
-            if (fi.Length <= 3) // Apenas BOM UTF-8
-            {
-                this.Loga($"⚠️ Arquivo histórico vazio (apenas BOM): {historicalFilePath}");
-                MessageBox.Show(
-                    $"O arquivo da data selecionada está vazio.\n\nNenhum conteúdo salvo para esta data.",
-                    "Anoteitor - Arquivo vazio",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-                return;
-            }
-
-            try
-            {
-                // Ler conteúdo SEM lógica de working copy
-                string content = ReadAllText(historicalFilePath);
-                Content = content;
-                controlContentTextBox.Text = Content;
-
-                // Atualizar estado
-                this.Filename = historicalFilePath;
-                IsDirty = false;
-                toolStripStatusLabel1.Text = "";
-
-                // ✅ FORÇAR fundo AZUL para indicar visualização de histórico
-                controlContentTextBox.BackColor = Color.AliceBlue;
-                this.Loga($"✅ Conteúdo histórico carregado com sucesso ({Content.Length} caracteres)");
-
-                // Atualizar UI
-                this.QtMinutosEsse = 0;
-                this.QtMinutos = cIni.ReadInt(Atual, "Tempo", 0);
-                this.MotraCaracteres();
-                this.Carregado = true;
-            }
-            catch (Exception ex)
-            {
-                this.Loga($"❌ Erro ao abrir arquivo histórico: {ex.Message}");
-                MessageBox.Show(
-                    $"Erro ao abrir o arquivo histórico:\n{ex.Message}",
-                    "Anoteitor - Erro",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
+            AlterarTamanhoFonte(-1f);
         }
+
+    private void AlterarTamanhoFonte(float delta)
+    {
+        try
+        {
+            Font fonteAtual = this.controlContentTextBox.Font;
+
+            float novoTamanho = fonteAtual.Size + delta;
+
+            // Limites de segurança
+            if (novoTamanho < 6f)
+                novoTamanho = 6f;
+
+            if (novoTamanho > 72f)
+                novoTamanho = 72f;
+
+            Font novaFonte = new Font(
+                fonteAtual.FontFamily,
+                novoTamanho,
+                fonteAtual.Style,
+                fonteAtual.Unit);
+
+            // Aplica no editor
+            this.controlContentTextBox.Font = novaFonte;
+
+            // Mantém a configuração global do programa
+            this.CurrentFont = novaFonte;
+
+            // Salva permanentemente
+            Settings.CurrentFont = novaFonte;
+            Settings.Save();
+
+            this.Loga($"Fonte alterada para {novoTamanho}");
+        }
+        catch (Exception ex)
+        {
+            this.Loga("Erro ao alterar fonte: " + ex.Message);
+            MessageBox.Show(
+                "Erro ao alterar o tamanho da fonte.\n\n" + ex.Message,
+                this.TitAplicativo,
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+        private void btnFonteMais_Click(object sender, EventArgs e)
+        {
+            AlterarTamanhoFonte(1f);
+        }
+
+
 
     }
 
