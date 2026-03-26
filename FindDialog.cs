@@ -13,13 +13,19 @@ namespace Anoteitor
             _Main = pMain;
         }
 
-        private void buttonCancel_Click(object sender, EventArgs e) {
+        private void buttonCancel_Click(object sender, EventArgs e)
+        {
             Hide();
+            _Main.Activate();
+            _Main.BringToFront();
         }
 
-        private void FindDialog_FormClosing(object sender, FormClosingEventArgs e) {
+        private void FindDialog_FormClosing(object sender, FormClosingEventArgs e)
+        {
             e.Cancel = true;
             Hide();
+            _Main.Activate();
+            _Main.BringToFront();
         }
 
         private void controlTextBox_TextChanged(object sender, EventArgs e) {
@@ -59,11 +65,12 @@ namespace Anoteitor
             controlTextBox.Focus();
             controlTextBox.SelectAll();
 
-            if (window == null) {
-                base.Show();
-            } else {
-                base.Show(window);
-            }
+            base.Show(_Main);
+            //if (window == null) {
+            //    base.Show();
+            //} else {
+            //    base.Show(window);
+            //}
         }
     }
 }
