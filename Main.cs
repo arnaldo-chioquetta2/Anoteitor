@@ -17,11 +17,8 @@ namespace Anoteitor
 {
     public partial class Main : Form
     {
-
-        #region Inicialização
-
         private bool SalvarAutom = false;
-        private bool HojeVazio = false;        
+        private bool HojeVazio = false;
         private bool FonteComErro = false;
         private bool _Carregado = false;
         private bool Logar = false;
@@ -36,13 +33,13 @@ namespace Anoteitor
         private int QtMinutos = 0;
         private int QtMinutosEsse = 0;
         private long Tick = 0;
-        private string TitAplicativo = "";        
+        private string TitAplicativo = "";
         private string _LastSearchText;
         private string _Filename;
         private string _NomeArq;
-        private string _PastaGeral="";
+        private string _PastaGeral = "";
         private string Atual;
-        private string AtualAnt;        
+        private string AtualAnt;
         private string cbArquivosOld = "";
         private string NomeLog = "";
         private string _SUbAtual = "";
@@ -96,7 +93,7 @@ namespace Anoteitor
                 return _Carregado;
             }
             set
-            {                
+            {
                 _Carregado = value;
                 this.Loga("Carregado setado como " + _Carregado.ToString());
             }
@@ -184,7 +181,8 @@ namespace Anoteitor
                 this.MostraArquivosDoProjeto();
                 renomearToolStripMenuItem1.Enabled = true;
                 toolStripMenuItem1.Enabled = true;
-            } else
+            }
+            else
             {
                 subAtividadesToolStripMenuItem.Enabled = false;
             }
@@ -211,11 +209,6 @@ namespace Anoteitor
             // Limpa o log anterior para manter apenas a execução corrente
             File.WriteAllText(NomeLog, string.Empty);
         }
-
-        
-
-        #endregion
-
         private void timer1_Tick(object sender, EventArgs e)
         {
             Console.WriteLine("timer1_Tick");
@@ -343,7 +336,7 @@ namespace Anoteitor
 
         private void menuitemEditPaste_Click(object sender, EventArgs e)
         {
-            ColarTextoLimpo();
+            controlContentTextBox.Paste();
         }
 
         private void menuitemEditDelete_Click(object sender, EventArgs e)
@@ -358,7 +351,7 @@ namespace Anoteitor
             if (_Carregado)
             {
                 controlContentTextBox.SelectAll();
-            }            
+            }
         }
 
         private void menuitemEditTimeDate_Click(object sender, EventArgs e)
@@ -426,7 +419,7 @@ namespace Anoteitor
             {
                 this.Loga("FECHADO NORMALMENTE");
                 this.Loga("");
-            }               
+            }
         }
 
         private void menuitemEditReplace_Click(object sender, EventArgs e)
@@ -478,7 +471,7 @@ namespace Anoteitor
 
             if (OpenDialog.ShowDialog(this) != DialogResult.OK) return;
 
-            Open(OpenDialog.MSDialog.FileName, encoding:OpenDialog.Encoding);
+            Open(OpenDialog.MSDialog.FileName, encoding: OpenDialog.Encoding);
         }
 
         private void menuitemFormatFont_Click(object sender, EventArgs e)
@@ -519,18 +512,19 @@ namespace Anoteitor
             int QtdSub = cIni.ReadInt(this.Atual, "QtdSub", 0);
             frmMensagem.QtdSub = QtdSub;
             frmMensagem.ShowDialog();
-            if (frmMensagem.DialogResult == DialogResult.OK)            
+            if (frmMensagem.DialogResult == DialogResult.OK)
             {
                 cbSubprojeto.SelectedIndex = 0;
                 this.SUbAtual = "GERAL";
-                if ((QtdSub - 1)>0)
+                if ((QtdSub - 1) > 0)
                 {
                     MotraArqSub(QtdSub);
-                } else
+                }
+                else
                 {
                     cbSubprojeto.Visible = false;
                     apagarToolStripMenuItem.Enabled = false;
-                }                
+                }
             }
         }
 
@@ -562,80 +556,6 @@ namespace Anoteitor
             UpdateTitle();
         }
 
-        private string NormalizarTexto(string texto)
-        {
-            if (string.IsNullOrEmpty(texto))
-                return texto;
-
-            StringBuilder sb = new StringBuilder(texto.Length);
-
-            bool ultimoFoiEspaco = false;
-
-            foreach (char c in texto)
-            {
-                // manter quebras de linha
-                if (c == '\r' || c == '\n')
-                {
-                    sb.Append(c);
-                    ultimoFoiEspaco = false;
-                    continue;
-                }
-
-                // tab vira espaço
-                if (c == '\t')
-                {
-                    if (!ultimoFoiEspaco)
-                    {
-                        sb.Append(' ');
-                        ultimoFoiEspaco = true;
-                    }
-                    continue;
-                }
-
-                // NBSP vira espaço normal
-                if (c == '\u00A0')
-                {
-                    if (!ultimoFoiEspaco)
-                    {
-                        sb.Append(' ');
-                        ultimoFoiEspaco = true;
-                    }
-                    continue;
-                }
-
-                // remover invisíveis
-                if (
-                    c == '\u200B' ||
-                    c == '\u200C' ||
-                    c == '\u200D' ||
-                    c == '\u200E' ||
-                    c == '\u200F' ||
-                    c == '\uFEFF' ||
-                    c == '\u2060'
-                   )
-                {
-                    continue;
-                }
-
-                // espaços normais
-                if (c == ' ')
-                {
-                    if (!ultimoFoiEspaco)
-                    {
-                        sb.Append(c);
-                        ultimoFoiEspaco = true;
-                    }
-                    continue;
-                }
-
-                // caractere normal
-                sb.Append(c);
-                ultimoFoiEspaco = false;
-            }
-
-            return sb.ToString();
-        }
-
         #region Salvamento
 
         private bool Save()
@@ -647,16 +567,6 @@ namespace Anoteitor
             {
                 this.Loga("Ia salvar vazio");
                 return true;
-            }
-
-            string textoNormalizado = NormalizarTexto(Content);
-            string msnSlv = "Gravado às : ";
-            if (textoNormalizado != Content)
-            {
-                this.Loga("✳️ Texto normalizado antes de salvar");
-                Content = textoNormalizado;
-                controlContentTextBox.Text = textoNormalizado;
-                msnSlv = "GRAVADO às : ";
             }
 
             toolStripStatusLabel1.Text = "Salvando arquivo";
@@ -704,7 +614,7 @@ namespace Anoteitor
                 this.Loga($"Working copy salvo: {workingCopy} ({Tam} bytes)");
 
                 string HoraSalva = Fun.Agora().ToString(@"HH\:mm\:ss");
-                toolStripStatusLabel1.Text = msnSlv + HoraSalva;
+                toolStripStatusLabel1.Text = "Gravado às : " + HoraSalva;
 
                 this.AjustaCorFundo();
             }
@@ -934,7 +844,7 @@ namespace Anoteitor
 
             // ✅ Prioridade 3: Usar arquivo original (para histórico)
             return pFilename;
-        }        
+        }
 
         private void AjustaCorFundo()
         {
@@ -1047,9 +957,9 @@ namespace Anoteitor
             return true;
         }
 
-#endregion
+        #endregion
 
-#region Edição
+        #region Edição
 
         public string Content
         {
@@ -1077,7 +987,7 @@ namespace Anoteitor
                         {
                             Console.WriteLine("timer1.Enabled = true");
                             timer1.Enabled = true;
-                        }                            
+                        }
                     }
                 }
             }
@@ -1131,7 +1041,7 @@ namespace Anoteitor
         {
             if (!IsDirty) return true;
 
-            if (controlContentTextBox.Text.Length==0) return true;
+            if (controlContentTextBox.Text.Length == 0) return true;
 
             var DialogResult = new SaveChangesPrompt(Filename).ShowDialog(this);
 
@@ -1426,15 +1336,6 @@ namespace Anoteitor
 
         private void controlContentTextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            // 🔥 Interceptar Ctrl+V
-            if (e.Control && e.KeyCode == Keys.V)
-            {
-                e.SuppressKeyPress = true; // bloqueia o paste padrão
-                ColarTextoLimpo();
-                return;
-            }
-
-            // mantém comportamento atual
             UpdateStatusBar();
         }
 
@@ -1455,60 +1356,6 @@ namespace Anoteitor
             {
                 toolStripStatusLabel1.Text = LetrasSel.ToString() + " Caractres Selecionados";
             }
-        }
-
-        private void ColarTextoLimpo()
-        {
-            if (!Clipboard.ContainsText())
-                return;
-
-            string texto = Clipboard.GetText();
-            texto = RemoverCaracteresInvalidos(texto);
-
-            int selStart = controlContentTextBox.SelectionStart;
-
-            controlContentTextBox.SelectedText = texto;
-            controlContentTextBox.SelectionStart = selStart + texto.Length;
-        }
-
-        private string RemoverCaracteresInvalidos(string texto)
-        {
-            if (string.IsNullOrEmpty(texto))
-                return texto;
-
-            StringBuilder sb = new StringBuilder(texto.Length);
-
-            foreach (char c in texto)
-            {
-                if (c == '\r' || c == '\n' || c == '\t')
-                {
-                    sb.Append(c);
-                    continue;
-                }
-
-                if (
-                    c == '\u200B' ||
-                    c == '\u200C' ||
-                    c == '\u200D' ||
-                    c == '\u200E' ||
-                    c == '\u200F' ||
-                    c == '\uFEFF' ||
-                    c == '\u2060'
-                   )
-                {
-                    continue;
-                }
-
-                if (c == '\u00A0')
-                {
-                    sb.Append(' ');
-                    continue;
-                }
-
-                sb.Append(c);
-            }
-
-            return sb.ToString();
         }
 
         #endregion
@@ -1566,191 +1413,6 @@ namespace Anoteitor
             }
 
             _FindDialog.Triggered();
-        }
-
-        private void procurarPorTudoToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            FindInAllFilesRecursive(this.PastaGeral);
-        }
-
-        private async void FindInAllFilesRecursive(string baseDirectory)
-        {
-            // Tentei refatorar pelo Qwen em 12/03/2026 e deu errado
-            if (string.IsNullOrWhiteSpace(Content)) return;
-            string searchText = ObterTextoBusca();
-            if (string.IsNullOrWhiteSpace(searchText)) return;
-            _cts = new CancellationTokenSource();
-            CancellationToken token = _cts.Token;
-            try
-            {
-                Resultados resultWindow = null;
-                await ExecutarBusca(baseDirectory, searchText, token, rw => resultWindow = rw, () => resultWindow);
-                Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
-                if (resultWindow == null)
-                {
-                    MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Erro ao buscar arquivos: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-
-        private string ObterTextoBusca()
-        {
-            string searchText = controlContentTextBox.SelectedText;
-            if (string.IsNullOrEmpty(searchText))
-            {
-                searchText = ShowInputDialog("Busca Global", "Digite o termo que deseja buscar:");
-                if (string.IsNullOrWhiteSpace(searchText))
-                {
-                    return null;
-                }
-            }
-            return searchText;
-        }
-
-        private async Task ExecutarBusca(string baseDirectory, string searchText, CancellationToken token, Action<Resultados> setWindow, Func<Resultados> getWindow)
-        {
-            List<string> allFiles = Directory.GetFiles(baseDirectory, "*.*", SearchOption.AllDirectories).ToList();
-            int totalFiles = allFiles.Count;
-            int processedFiles = 0;
-            await Task.Run(() =>
-            {
-                foreach (var file in allFiles)
-                {
-                    if (token.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                    processedFiles++;
-                    UpdateProgress(processedFiles, totalFiles);
-                    ProcessarArquivo(file, searchText, setWindow, getWindow);
-                }
-            }, token);
-        }
-
-        private void ProcessarArquivo(string file, string searchText, Action<Resultados> setWindow, Func<Resultados> getWindow)
-        {
-            try
-            {
-                using (StreamReader reader = new StreamReader(file))
-                {
-                    string line;
-                    int lineNumber = 0;
-                    while ((line = reader.ReadLine()) != null)
-                    {
-                        lineNumber++;
-                        if (line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            TratarOcorrencia(file, line, setWindow, getWindow);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Invoke(new Action(() =>
-                {
-                    MessageBox.Show($"Erro ao ler o arquivo {file}: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }));
-            }
-        }
-
-        private void TratarOcorrencia(string file, string line, Action<Resultados> setWindow, Func<Resultados> getWindow)
-        {
-            var window = getWindow();
-            if (window == null)
-            {
-                Invoke(new Action(() =>
-                {
-                    var nova = new Resultados(this, new List<(string, string)> { (file, line) }, _cts);
-                    nova.StartPosition = FormStartPosition.CenterScreen;
-                    nova.Show();
-                    setWindow(nova);
-                }));
-            }
-            else
-            {
-                Invoke(new Action(() =>
-                {
-                    window.AdicionarResultado(file, line);
-                }));
-            }
-        }
-
-        // Atualiza o título do programa com o percentual da busca
-        private void UpdateProgress(int processed, int total)
-        {
-            if (total > 0)
-            {
-                int percent = (processed * 100) / total;
-                Invoke(new Action(() => { this.Text = $"Anoteitor - Buscando... {percent}%"; }));
-            }
-        }
-
-        private void procurarEmTodasDatasToolStripMenuItem_Click(object sender, EventArgs e)
-        {
-            string PastaSubAtual = "";
-            if (this.SUbAtual != "")
-            {
-                PastaSubAtual = @"\" + this.SUbAtual;
-            }
-            string PastaSub = this.PastaGeral + @"\" + this.Atual + PastaSubAtual;
-            FindInAllFiles(PastaSub);
-        }
-
-        private void FindInAllFiles(string PastaSub)
-        {
-            string searchText = controlContentTextBox.SelectedText;
-            if (string.IsNullOrEmpty(searchText))
-            {
-                searchText = ShowInputDialog("Busca em Todos os Arquivos", "Digite o termo que deseja buscar:");
-                if (string.IsNullOrWhiteSpace(searchText)) return;
-            }
-            string taskName = this.Atual; // Nome da tarefa atual
-            List<string> matchingFiles = Directory.GetFiles(PastaSub, $"{taskName}*")
-                .OrderBy(f => new FileInfo(f).CreationTime)
-                .ToList();
-            List<(string filePath, string displayText)> foundOccurrences = new List<(string, string)>();
-            foreach (var file in matchingFiles)
-            {
-                try
-                {
-                    using (StreamReader reader = new StreamReader(file))
-                    {
-                        string line;
-                        int lineNumber = 0;
-                        while ((line = reader.ReadLine()) != null)
-                        {
-                            lineNumber++;
-                            if (line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
-                                string fileName = Path.GetFileName(file);
-                                string datePart = Helper.ExtractDateFromFileName(fileName);
-                                foundOccurrences.Add((file, line));
-                                // foundOccurrences.Add($"{datePart} : {line}");
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Erro ao ler o arquivo {file}: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }
-
-            if (foundOccurrences.Count > 0)
-            {
-                Resultados resultWindow = new Resultados(this, foundOccurrences, _cts);
-                resultWindow.StartPosition = FormStartPosition.CenterScreen;
-                resultWindow.Show();
-            }
-            else
-            {
-                MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
         }
 
         #endregion
@@ -1851,8 +1513,8 @@ namespace Anoteitor
                             {
                                 cbProjetos.SelectedIndex = i - 2;
                             }
-                        }                        
-                    }                        
+                        }
+                    }
                 }
             }
         }
@@ -1861,14 +1523,14 @@ namespace Anoteitor
         {
             int QtdSub = this.cIni.ReadInt(EssaAtivi, "QtdSub", 0);
             this.Loga("Lendo do Ini a quantidade de SubAtividades da Atividade " + EssaAtivi);
-            this.Loga("QtdSub = "+ QtdSub.ToString());
+            this.Loga("QtdSub = " + QtdSub.ToString());
             if (QtdSub > 0)
                 this.MotraArqSub(QtdSub);
             else
             {
                 cbSubprojeto.Visible = false;
                 renomearToolStripMenuItem1.Enabled = false;
-            }                
+            }
         }
 
         private void MotraArqSub(int QtdSub)
@@ -1884,12 +1546,12 @@ namespace Anoteitor
                 cbSubprojeto.Items.Add("GERAL");
             this.SUbAtual = cIni.ReadString(this.Atual, "SubAtual", "");
             this.Loga("SUbAtual = " + this.SUbAtual);
-            List<String> Subs = new List<String>();            
+            List<String> Subs = new List<String>();
             for (int i = 0; i < QtdSub; i++)
             {
                 string nmSubAtiv = "Sub" + (i + 1).ToString();
                 string Nome = this.cIni.ReadString(this.Atual, nmSubAtiv, "");
-                if (Nome.Length>0)
+                if (Nome.Length > 0)
                     Subs.Add(Nome);
             }
             Subs.Sort();
@@ -1904,7 +1566,7 @@ namespace Anoteitor
                 }
                 if (Adic)
                 {
-                    this.Loga("Adicionado na Sub "+ Nome);
+                    this.Loga("Adicionado na Sub " + Nome);
                     cbSubprojeto.Items.Add(Nome);
                     if (Nome == this.SUbAtual)
                     {
@@ -1914,18 +1576,19 @@ namespace Anoteitor
                         }
                         catch (Exception)
                         {
-                            cbSubprojeto.SelectedIndex = cbSubprojeto.Items.Count-1;
+                            cbSubprojeto.SelectedIndex = cbSubprojeto.Items.Count - 1;
                         }
                     }
                 }
-                
+
             }
             if (this.SUbAtual == "")
             // if (this.SUbAtual == "GERAL")
             {
                 renomearToolStripMenuItem.Enabled = false;
                 cbSubprojeto.SelectedIndex = cbSubprojeto.FindStringExact("GERAL");
-            } else
+            }
+            else
                 renomearToolStripMenuItem.Enabled = true;
             apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
         }
@@ -1985,7 +1648,8 @@ namespace Anoteitor
             if (QtdSub > 0)
             {
                 this.MotraArqSub(QtdSub);
-            } else
+            }
+            else
                 renomearToolStripMenuItem.Enabled = false;
             apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
             this.PreparaComboArquivo(this.PastaGeral + @"\" + this.Atual + @"\" + this.SUbAtual);
@@ -2281,7 +1945,7 @@ namespace Anoteitor
                 MessageBox.Show($"Erro ao abrir arquivo da data selecionada:\n{ex.Message}",
                                "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-        }        
+        }
 
         private void cbArquivos_DropDownClosed(object sender, EventArgs e)
         {
@@ -2342,8 +2006,8 @@ namespace Anoteitor
                             catch (Exception)
                             {
                                 this.Loga("Pasta Vazia");
-                            } 
-                            if (arquivo!=null)
+                            }
+                            if (arquivo != null)
                             {
                                 try
                                 {
@@ -2359,9 +2023,9 @@ namespace Anoteitor
                                         {
                                             for (int j = 0; j < QtdSub; j++)
                                             {
-                                                string Sub = "Sub" + (j+1).ToString();
+                                                string Sub = "Sub" + (j + 1).ToString();
                                                 string NomeSub = cIni.ReadString(NomeAtiv, Sub, "");
-                                                this.Loga("    " + NomeSub); 
+                                                this.Loga("    " + NomeSub);
                                                 string SubPasta = Pasta + @"\" + NomeSub;
                                                 DirectoryInfo infSub = new DirectoryInfo(SubPasta);
                                                 try
@@ -2426,7 +2090,7 @@ namespace Anoteitor
         }
 
         private void timer2_Tick(object sender, EventArgs e)
-        {            
+        {
             this.QtMinutosEsse++;
             int QtAgora = this.QtMinutos + QtMinutosEsse;
             string Tempo = this.HoraFmt(QtAgora);
@@ -2493,7 +2157,7 @@ namespace Anoteitor
             if (cSubAtiv.DialogResult == DialogResult.OK)
             {
                 string Nome = cSubAtiv.Nome();
-                if (Nome.Length>0)
+                if (Nome.Length > 0)
                 {
                     this.Cursor = Cursors.WaitCursor;
                     string sData = Fun.Agora().ToShortDateString();
@@ -2523,7 +2187,7 @@ namespace Anoteitor
                 string NomeAtividade = cProj.getNomeAtividade();
                 Fun.Renomeia(this.PastaGeral, @"\" + this.Atual, @"\" + NomeAtividade);
                 int Nr = Fun.NumePeloNomeAtividade(ref this.cIni, this.Atual);
-                if (Nr>-1)
+                if (Nr > -1)
                 {
                     string nmProjeto = "Pro" + Nr.ToString();
                     this.cIni.WriteString("NmProjetos", nmProjeto, NomeAtividade);
@@ -2538,7 +2202,7 @@ namespace Anoteitor
                 this.Atual = NomeAtividade;
             }
         }
-        
+
         private void toolStripMenuItem1_Click(object sender, EventArgs e)
         {
             Mensagem frmMensagem = new Mensagem();
@@ -2562,6 +2226,191 @@ namespace Anoteitor
         }
 
         #endregion
+
+        private void procurarPorTudoToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            FindInAllFilesRecursive(this.PastaGeral);
+        }
+
+        private async void FindInAllFilesRecursive(string baseDirectory)
+        {
+            // Tentei refatorar pelo Qwen em 12/03/2026 e deu errado
+            if (string.IsNullOrWhiteSpace(Content)) return;
+            string searchText = ObterTextoBusca();
+            if (string.IsNullOrWhiteSpace(searchText)) return;
+            _cts = new CancellationTokenSource();
+            CancellationToken token = _cts.Token;
+            try
+            {
+                Resultados resultWindow = null;
+                await ExecutarBusca(baseDirectory, searchText, token, rw => resultWindow = rw, () => resultWindow);
+                Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
+                if (resultWindow == null)
+                {
+                    MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Erro ao buscar arquivos: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private string ObterTextoBusca()
+        {
+            string searchText = controlContentTextBox.SelectedText;
+            if (string.IsNullOrEmpty(searchText))
+            {
+                searchText = ShowInputDialog("Busca Global", "Digite o termo que deseja buscar:");
+                if (string.IsNullOrWhiteSpace(searchText))
+                {
+                    return null;
+                }
+            }
+            return searchText;
+        }
+
+        private async Task ExecutarBusca(string baseDirectory, string searchText, CancellationToken token, Action<Resultados> setWindow, Func<Resultados> getWindow)
+        {
+            List<string> allFiles = Directory.GetFiles(baseDirectory, "*.*", SearchOption.AllDirectories).ToList();
+            int totalFiles = allFiles.Count;
+            int processedFiles = 0;
+            await Task.Run(() =>
+            {
+                foreach (var file in allFiles)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    processedFiles++;
+                    UpdateProgress(processedFiles, totalFiles);
+                    ProcessarArquivo(file, searchText, setWindow, getWindow);
+                }
+            }, token);
+        }
+
+        private void ProcessarArquivo(string file, string searchText, Action<Resultados> setWindow, Func<Resultados> getWindow)
+        {
+            try
+            {
+                using (StreamReader reader = new StreamReader(file))
+                {
+                    string line;
+                    int lineNumber = 0;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        lineNumber++;
+                        if (line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            TratarOcorrencia(file, line, setWindow, getWindow);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Invoke(new Action(() =>
+                {
+                    MessageBox.Show($"Erro ao ler o arquivo {file}: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }));
+            }
+        }
+
+        private void TratarOcorrencia(string file, string line, Action<Resultados> setWindow, Func<Resultados> getWindow)
+        {
+            var window = getWindow();
+            if (window == null)
+            {
+                Invoke(new Action(() =>
+                {
+                    var nova = new Resultados(this, new List<(string, string)> { (file, line) }, _cts);
+                    nova.StartPosition = FormStartPosition.CenterScreen;
+                    nova.Show();
+                    setWindow(nova);
+                }));
+            }
+            else
+            {
+                Invoke(new Action(() =>
+                {
+                    window.AdicionarResultado(file, line);
+                }));
+            }
+        }
+
+        // Atualiza o título do programa com o percentual da busca
+        private void UpdateProgress(int processed, int total)
+        {
+            if (total > 0)
+            {
+                int percent = (processed * 100) / total;
+                Invoke(new Action(() => { this.Text = $"Anoteitor - Buscando... {percent}%"; }));
+            }
+        }
+
+        private void procurarEmTodasDatasToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            string PastaSubAtual = "";
+            if (this.SUbAtual != "")
+            {
+                PastaSubAtual = @"\" + this.SUbAtual;
+            }
+            string PastaSub = this.PastaGeral + @"\" + this.Atual + PastaSubAtual;
+            FindInAllFiles(PastaSub);
+        }
+
+        private void FindInAllFiles(string PastaSub)
+        {
+            string searchText = controlContentTextBox.SelectedText;
+            if (string.IsNullOrEmpty(searchText))
+            {
+                searchText = ShowInputDialog("Busca em Todos os Arquivos", "Digite o termo que deseja buscar:");
+                if (string.IsNullOrWhiteSpace(searchText)) return;
+            }
+            string taskName = this.Atual; // Nome da tarefa atual
+            List<string> matchingFiles = Directory.GetFiles(PastaSub, $"{taskName}*")
+                .OrderBy(f => new FileInfo(f).CreationTime)
+                .ToList();
+            List<(string filePath, string displayText)> foundOccurrences = new List<(string, string)>();
+            foreach (var file in matchingFiles)
+            {
+                try
+                {
+                    using (StreamReader reader = new StreamReader(file))
+                    {
+                        string line;
+                        int lineNumber = 0;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            lineNumber++;
+                            if (line.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                string fileName = Path.GetFileName(file);
+                                string datePart = Helper.ExtractDateFromFileName(fileName);
+                                foundOccurrences.Add((file, line));
+                                // foundOccurrences.Add($"{datePart} : {line}");
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Erro ao ler o arquivo {file}: {ex.Message}", "Erro", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+
+            if (foundOccurrences.Count > 0)
+            {
+                Resultados resultWindow = new Resultados(this, foundOccurrences, _cts);
+                resultWindow.StartPosition = FormStartPosition.CenterScreen;
+                resultWindow.Show();
+            }
+            else
+            {
+                MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
 
         private string ShowInputDialog(string title, string promptText)
         {
@@ -2601,7 +2450,17 @@ namespace Anoteitor
 
             DialogResult dialogResult = form.ShowDialog();
             return dialogResult == DialogResult.OK ? textBox.Text : "";
-        }        
+        }
+
+        //private void SafeDisableTimer()
+        //{
+        //    if (this.timer1.Enabled)
+        //    {
+        //        this.timer1.Enabled = false;
+        //        // Forçar salvamento imediato se houver alterações
+        //        if (this.IsDirty) this.Save();
+        //    }
+        //}
 
         private void toolStripMenuItem2_Click(object sender, EventArgs e)
         {
@@ -2622,8 +2481,6 @@ namespace Anoteitor
                                this.TitAplicativo, MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
-
-        #region Fonte
 
         private void btnFonteMenos_Click(object sender, EventArgs e)
         {
@@ -2673,14 +2530,12 @@ namespace Anoteitor
                     MessageBoxIcon.Error);
             }
         }
-
         private void btnFonteMais_Click(object sender, EventArgs e)
         {
             AlterarTamanhoFonte(1f);
         }
 
 
-        #endregion
 
     }
 
