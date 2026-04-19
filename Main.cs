@@ -27,6 +27,7 @@ namespace Anoteitor
         private bool _IsDirty;
         private bool MedeTempos = false;
         private bool NovaTarefa = false;
+        private bool _isSanitizingContentText = false;
         private int DataSalva;
         private int QtdCarac = 0;
         private int Segundos = 2;
@@ -336,7 +337,7 @@ namespace Anoteitor
 
         private void menuitemEditPaste_Click(object sender, EventArgs e)
         {
-            controlContentTextBox.Paste();
+            PasteNormalizedClipboardText();
         }
 
         private void menuitemEditDelete_Click(object sender, EventArgs e)
@@ -560,6 +561,8 @@ namespace Anoteitor
 
         private bool Save()
         {
+            EnsureEditorContentSanitized();
+
             if (!IsDirty) return true;
 
             int Tam = Content.Length;
@@ -606,7 +609,7 @@ namespace Anoteitor
                 }
 
                 // ✅ Salvar working copy (estado atual)
-                File.WriteAllText(workingCopy, Content, _encoding ?? Encoding.UTF8);
+                File.WriteAllText(workingCopy, SanitizeControlCharacters(Content), _encoding ?? Encoding.UTF8);
 
                 IsDirty = false;
                 this.Filename = workingCopy;
@@ -646,7 +649,8 @@ namespace Anoteitor
             var PotentialFilename = SaveDialog.MSDialog.FileName;
 
             _encoding = SaveDialog.Encoding;
-            File.WriteAllText(PotentialFilename, Content, _encoding);
+            EnsureEditorContentSanitized();
+            File.WriteAllText(PotentialFilename, SanitizeControlCharacters(Content), _encoding);
 
             Filename = PotentialFilename;
             IsDirty = false;
@@ -736,7 +740,7 @@ namespace Anoteitor
                 {
                     if (arquivo.FullName == arquivoAtual) continue;
 
-                    string conteudo = File.ReadAllText(arquivo.FullName, Encoding.UTF8);
+                        string conteudo = SanitizeControlCharacters(File.ReadAllText(arquivo.FullName, Encoding.UTF8));
                     if (conteudo.Length > 3) // Conteúdo real além do BOM
                     {
                         Content = conteudo;
@@ -751,7 +755,7 @@ namespace Anoteitor
                         string nomeBase = Path.GetFileNameWithoutExtension(arquivoAtual).Split('^')[0];
                         string workingCopy = Path.Combine(pastaArq, nomeBase + ".txt");
 
-                        File.WriteAllText(workingCopy, Content, Encoding.UTF8);
+                        File.WriteAllText(workingCopy, SanitizeControlCharacters(Content), Encoding.UTF8);
                         this.Loga($"✅ Conteúdo salvo no working copy: {workingCopy}");
 
                         this.Filename = workingCopy;
@@ -911,7 +915,7 @@ namespace Anoteitor
                 }
             }
 
-            string content = File.ReadAllText(path, encoding);
+            string content = SanitizeControlCharacters(File.ReadAllText(path, encoding));
             this.Loga("    Conteúdo lido: " + (content.Length > 0 ? content.Length + " caracteres" : "VAZIO"));
             return content;
         }
@@ -966,12 +970,14 @@ namespace Anoteitor
             get { return controlContentTextBox.Text; }
             set
             {
-                controlContentTextBox.Text = value;
+                controlContentTextBox.Text = SanitizeControlCharacters(value);
             }
         }
 
         private void controlContentTextBox_TextChanged(object sender, EventArgs e)
         {
+            SanitizeEditorTextIfNeeded();
+
             Console.WriteLine("controlContentTextBox_TextChanged");
             IsDirty = true;
             if (this.Carregado)
@@ -992,6 +998,160 @@ namespace Anoteitor
                 }
             }
 
+        }
+
+        private void EnsureEditorContentSanitized()
+        {
+            if (_isSanitizingContentText) return;
+
+            SanitizeEditorTextIfNeeded();
+        }
+
+        private void SanitizeEditorTextIfNeeded()
+        {
+            if (_isSanitizingContentText) return;
+
+            string originalText = controlContentTextBox.Text;
+            string sanitizedText = SanitizeControlCharacters(originalText);
+
+            if (sanitizedText == originalText) return;
+
+            int selectionStart = controlContentTextBox.SelectionStart;
+            int selectionLength = controlContentTextBox.SelectionLength;
+
+            _isSanitizingContentText = true;
+            try
+            {
+                controlContentTextBox.Text = sanitizedText;
+
+                int newSelectionStart = RemapIndexAfterSanitization(originalText, selectionStart);
+                int selectionEnd = Math.Min(originalText.Length, selectionStart + selectionLength);
+                int newSelectionEnd = RemapIndexAfterSanitization(originalText, selectionEnd);
+
+                controlContentTextBox.SelectionStart = newSelectionStart;
+                controlContentTextBox.SelectionLength = Math.Max(0, newSelectionEnd - newSelectionStart);
+            }
+            finally
+            {
+                _isSanitizingContentText = false;
+            }
+
+            this.Loga("Caracteres de controle removidos do editor.");
+        }
+
+        private static int RemapIndexAfterSanitization(string text, int originalIndex)
+        {
+            if (string.IsNullOrEmpty(text) || originalIndex <= 0) return 0;
+            if (originalIndex > text.Length) originalIndex = text.Length;
+
+            int sanitizedIndex = 0;
+            for (int i = 0; i < originalIndex; i++)
+            {
+                sanitizedIndex += GetNormalizedCharacterLength(text, i, out bool skipNext);
+                if (skipNext)
+                    i++;
+            }
+
+            return sanitizedIndex;
+        }
+
+        private static string SanitizeControlCharacters(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+
+            StringBuilder sanitized = null;
+
+            for (int i = 0; i < text.Length; i++)
+            {
+                AppendNormalizedCharacter(text, i, ref sanitized, out bool skipNext);
+                if (skipNext)
+                    i++;
+            }
+
+            return sanitized == null ? text : sanitized.ToString();
+        }
+
+        private static void AppendNormalizedCharacter(string text, int index, ref StringBuilder sanitized, out bool skipNext)
+        {
+            skipNext = false;
+            char current = text[index];
+            string normalizedValue = GetNormalizedCharacterValue(text, index, out skipNext);
+
+            if (normalizedValue == null)
+            {
+                if (sanitized == null)
+                {
+                    sanitized = new StringBuilder(text.Length);
+                    sanitized.Append(text, 0, index);
+                }
+                return;
+            }
+
+            if (sanitized == null)
+            {
+                bool unchanged = normalizedValue.Length == 1 && normalizedValue[0] == current;
+                if (unchanged)
+                    return;
+
+                sanitized = new StringBuilder(text.Length + 8);
+                sanitized.Append(text, 0, index);
+            }
+
+            sanitized.Append(normalizedValue);
+        }
+
+        private static int GetNormalizedCharacterLength(string text, int index, out bool skipNext)
+        {
+            string normalizedValue = GetNormalizedCharacterValue(text, index, out skipNext);
+            return normalizedValue == null ? 0 : normalizedValue.Length;
+        }
+
+        private static string GetNormalizedCharacterValue(string text, int index, out bool skipNext)
+        {
+            skipNext = false;
+            char value = text[index];
+
+            if (value == '\r')
+            {
+                if (index + 1 < text.Length && text[index + 1] == '\n')
+                    skipNext = true;
+
+                return Environment.NewLine;
+            }
+
+            if (value == '\n' || value == '\u0085' || value == '\u2028' || value == '\u2029' || value == '\v' || value == '\f')
+                return Environment.NewLine;
+
+            if (value == '\t')
+                return "\t";
+
+            return char.IsControl(value) ? null : value.ToString();
+        }
+
+        private static bool ShouldKeepCharacter(char value)
+        {
+            if (value == '\r' || value == '\n' || value == '\t')
+                return true;
+
+            return !char.IsControl(value);
+        }
+
+        private void PasteNormalizedClipboardText()
+        {
+            if (!Clipboard.ContainsText(TextDataFormat.UnicodeText) && !Clipboard.ContainsText())
+            {
+                controlContentTextBox.Paste();
+                return;
+            }
+
+            string clipboardText = Clipboard.ContainsText(TextDataFormat.UnicodeText)
+                ? Clipboard.GetText(TextDataFormat.UnicodeText)
+                : Clipboard.GetText();
+
+            if (string.IsNullOrEmpty(clipboardText))
+                return;
+
+            SelectedText = SanitizeControlCharacters(clipboardText);
         }
 
         public bool WordWrap
@@ -1336,6 +1496,13 @@ namespace Anoteitor
 
         private void controlContentTextBox_KeyDown(object sender, KeyEventArgs e)
         {
+            if ((e.Control && e.KeyCode == Keys.V) || (e.Shift && e.KeyCode == Keys.Insert))
+            {
+                PasteNormalizedClipboardText();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+            }
+
             UpdateStatusBar();
         }
 
@@ -1652,7 +1819,7 @@ namespace Anoteitor
             else
                 renomearToolStripMenuItem.Enabled = false;
             apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
-            this.PreparaComboArquivo(this.PastaGeral + @"\" + this.Atual + @"\" + this.SUbAtual);
+            this.PreencheComboArquivo(this.PastaGeral + @"\" + this.Atual + @"\" + this.SUbAtual);
             this.cbArquivosOld = this.cbArquivos.Text;
         }
 
@@ -1685,11 +1852,16 @@ namespace Anoteitor
             }
         }
 
-        private void PreparaComboArquivo(string Pasta)
+        private void PreencheComboArquivo(string pasta, bool mostrarTodas = false)
+        {
+            PreparaComboArquivo(pasta, mostrarTodas);
+        }
+
+        private void PreparaComboArquivo(string Pasta, bool mostrarTodas = false)
         {
             this.Loga("[v2.1] PreparaComboArquivo");
 
-            bool AdicionarOMais = false;
+            bool adicionarTodas = false;
             if (this.mostrarSóDoDiaToolStripMenuItem.Checked == false)
             {
                 int LimArqs = cIni.ReadInt("Projetos", "LimArqs", 31);
@@ -1725,10 +1897,10 @@ namespace Anoteitor
 
                 cbArquivos.Visible = true;
                 int Ini = QtdArqs - LimArqs;
-                if (Ini < 0)
+                if (mostrarTodas || Ini < 0)
                     Ini = 0;
                 else
-                    AdicionarOMais = true;
+                    adicionarTodas = true;
 
                 cbArquivos.Items.Clear();
                 ArqsAdds.Sort();
@@ -1748,8 +1920,8 @@ namespace Anoteitor
                 }
             }
 
-            if (AdicionarOMais)
-                this.cbArquivos.Items.Add("TUDO");
+            if (adicionarTodas)
+                this.cbArquivos.Items.Add("TODAS");
         }
 
         private string NomeDoArquivo(string Data, bool forcarDataEspecifica = false)
@@ -1809,6 +1981,25 @@ namespace Anoteitor
 
             if (!this.Carregado || string.IsNullOrEmpty(cbArquivos.Text))
                 return;
+
+            if (cbArquivos.Text == "TODAS")
+            {
+                string dataSelecionada = string.IsNullOrEmpty(cbArquivosOld) ? Fun.Agora().ToShortDateString() : cbArquivosOld;
+                string pastaAtual = this.PastaGeral + @"\" + this.Atual +
+                    (string.IsNullOrEmpty(this.SUbAtual) ? "" : @"\" + this.SUbAtual);
+
+                this.Loga("Recarregando combo de datas em modo TODAS");
+                this.PreencheComboArquivo(pastaAtual, true);
+
+                int posicaoData = cbArquivos.Items.IndexOf(dataSelecionada);
+                if (posicaoData > -1)
+                    cbArquivos.SelectedIndex = posicaoData;
+                else if (cbArquivos.Items.Count > 0)
+                    cbArquivos.SelectedIndex = cbArquivos.Items.Count - 1;
+
+                this.cbArquivosOld = cbArquivos.Text;
+                return;
+            }
 
             bool mudouData = cbArquivos.Text != this.cbArquivosOld;
 
@@ -2145,7 +2336,7 @@ namespace Anoteitor
                 string PastaSub = this.PastaGeral + @"\" + this.Atual +
                                  (string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL" ? "" : @"\" + this.SUbAtual);
 
-                this.PreparaComboArquivo(PastaSub);
+                this.PreencheComboArquivo(PastaSub);
             }
         }
 
