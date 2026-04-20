@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Drawing;
 using System.Threading;
+using System.Diagnostics;
 using System.Reflection;
 using System.Windows.Forms;
 using System.Threading.Tasks;
@@ -28,6 +29,7 @@ namespace Anoteitor
         private bool MedeTempos = false;
         private bool NovaTarefa = false;
         private bool _isSanitizingContentText = false;
+        private bool _suppressEditorChangeTracking = false;
         private int DataSalva;
         private int QtdCarac = 0;
         private int Segundos = 2;
@@ -53,6 +55,8 @@ namespace Anoteitor
         private Encoding _encoding = Encoding.ASCII;
         private PageSettings _PageSettings;
         private string _CurrentFileDate = "";
+        private string _lastKnownEditorText = "";
+        private readonly Stack<EditorSnapshot> _undoSnapshots = new Stack<EditorSnapshot>();
 
         public string PastaGeral
         {
@@ -106,6 +110,13 @@ namespace Anoteitor
             public int ColumnIndex;
         }
 
+        private class EditorSnapshot
+        {
+            public string Text;
+            public int SelectionStart;
+            public int SelectionLength;
+        }
+
         public Main()
         {
             InitializeComponent();
@@ -151,6 +162,14 @@ namespace Anoteitor
                 cIni.WriteBool("Projetos", "MedeTempos", true);
                 cIni.WriteInt("Projetos", "LimArqs", 30);
                 cIni.WriteBool("Config", "Log", false);
+                cIni.WriteString("Atualizacao", "ExecutavelPrincipal", Path.GetFileName(Application.ExecutablePath));
+                cIni.WriteString("Atualizacao", "DiretorioInstalacao", Application.StartupPath);
+                cIni.WriteString("Atualizacao", "CaminhoAtualizador", Path.Combine(Application.StartupPath, "Atualizador", "ATCAtualizeitor.exe"));
+                cIni.WriteString("Atualizacao", "ServidorFTP", "");
+                cIni.WriteString("Atualizacao", "UsuarioFTP", "");
+                cIni.WriteString("Atualizacao", "SenhaFTP", "");
+                cIni.WriteString("Atualizacao", "PastaFTP", "");
+                cIni.WriteString("Atualizacao", "VersaoAtual", this.GetVersaoCurta());
             }
         }
 
@@ -175,6 +194,7 @@ namespace Anoteitor
             controlContentTextBox.BringToFront(); // in order to docking to respond correctly to the status bar being turned off and on
             this.PastaGeral = cIni.ReadString("Projetos", "Pasta", "");
             this.Atual = cIni.ReadString("Projetos", "Atual", "");
+            PrepararConfiguracaoDeAtualizacao();
             this.PreencheCombo(this.Atual);
             if (this.Atual.Length > 0)
             {
@@ -320,9 +340,101 @@ namespace Anoteitor
             Close();
         }
 
+        private void menuitemExecutarAtualizacao_Click(object sender, EventArgs e)
+        {
+            ExecutarAtualizacaoSemiAutomatica();
+        }
+
+        private void ExecutarAtualizacaoSemiAutomatica()
+        {
+            try
+            {
+                PrepararConfiguracaoDeAtualizacao();
+
+                string caminhoAtualizador = cIni.ReadString(
+                    "Atualizacao",
+                    "CaminhoAtualizador",
+                    Path.Combine(Application.StartupPath, "Atualizador", "ATCAtualizeitor.exe"));
+
+                if (!File.Exists(caminhoAtualizador))
+                {
+                    MessageBox.Show(
+                        this,
+                        "O atualizador não foi encontrado.\n\n" + caminhoAtualizador,
+                        this.TitAplicativo,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                DialogResult confirmar = MessageBox.Show(
+                    this,
+                    "O Anoteitor será salvo, passará o controle para o atualizador e será encerrado.\n\nDeseja continuar?",
+                    "Atualização",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question);
+
+                if (confirmar != DialogResult.Yes)
+                    return;
+
+                if (this.IsDirty && !this.Save())
+                    return;
+
+                this.timer1.Enabled = false;
+                this.timer2.Enabled = false;
+
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = caminhoAtualizador,
+                    WorkingDirectory = Path.GetDirectoryName(caminhoAtualizador)
+                });
+
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                this.Loga("Erro ao iniciar atualização: " + ex.Message);
+                MessageBox.Show(
+                    this,
+                    "Não foi possível iniciar a atualização.\n\n" + ex.Message,
+                    "Atualização",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private void PrepararConfiguracaoDeAtualizacao()
+        {
+            string caminhoAtualizadorPadrao = Path.Combine(Application.StartupPath, "Atualizador", "ATCAtualizeitor.exe");
+
+            string executavelPrincipal = Path.GetFileName(Application.ExecutablePath);
+            string diretorioInstalacao = Application.StartupPath;
+            string caminhoAtualizador = cIni.ReadString("Atualizacao", "CaminhoAtualizador", caminhoAtualizadorPadrao);
+
+            if (string.IsNullOrWhiteSpace(caminhoAtualizador))
+                caminhoAtualizador = caminhoAtualizadorPadrao;
+
+            cIni.WriteString("Atualizacao", "ExecutavelPrincipal", executavelPrincipal);
+            cIni.WriteString("Atualizacao", "DiretorioInstalacao", diretorioInstalacao);
+            cIni.WriteString("Atualizacao", "CaminhoAtualizador", caminhoAtualizador);
+            cIni.WriteString("Atualizacao", "VersaoAtual", this.GetVersaoCurta());
+
+            GarantirChaveIni("Atualizacao", "ServidorFTP", "");
+            GarantirChaveIni("Atualizacao", "UsuarioFTP", "");
+            GarantirChaveIni("Atualizacao", "SenhaFTP", "");
+            GarantirChaveIni("Atualizacao", "PastaFTP", "");
+        }
+
+        private void GarantirChaveIni(string secao, string chave, string valorPadrao)
+        {
+            string valorAtual = cIni.ReadString(secao, chave, "");
+            if (string.IsNullOrWhiteSpace(valorAtual))
+                cIni.WriteString(secao, chave, valorPadrao);
+        }
+
         private void menuitemEditUndo_Click(object sender, EventArgs e)
         {
-            controlContentTextBox.Undo();
+            DesfazerAlteracaoDoEditor();
         }
 
         private void menuitemEditCut_Click(object sender, EventArgs e)
@@ -386,6 +498,8 @@ namespace Anoteitor
 
         private void menuitemEdit_DropDownOpening(object sender, EventArgs e)
         {
+            menuitemEditUndo.Enabled = _undoSnapshots.Count > 0;
+
             menuitemEditCut.Enabled =
                 menuitemEditCopy.Enabled =
                 menuitemEditDelete.Enabled = (SelectionLength > 0);
@@ -700,7 +814,14 @@ namespace Anoteitor
             this.QtMinutosEsse = 0;
             this.QtMinutos = cIni.ReadInt(Atual, "Tempo", 0);
             this.MotraCaracteres();
+            ResetUndoDaAtividadeAtual();
             this.Carregado = true; // ✅ FORÇAR Carregado = true após qualquer abertura
+        }
+
+        private void ResetUndoDaAtividadeAtual()
+        {
+            _undoSnapshots.Clear();
+            _lastKnownEditorText = controlContentTextBox.Text;
         }
 
         // ✅ MÉTODO 6: Aplicar busca de texto (12 linhas)
@@ -744,7 +865,6 @@ namespace Anoteitor
                     if (conteudo.Length > 3) // Conteúdo real além do BOM
                     {
                         Content = conteudo;
-                        controlContentTextBox.Text = Content;
                         controlContentTextBox.BackColor = Color.LightBlue; // Azul = baseado em histórico
                         IsDirty = true;
 
@@ -787,7 +907,6 @@ namespace Anoteitor
             // Ler conteúdo
             string content = ReadAllText(filename, encoding);
             Content = content;
-            controlContentTextBox.Text = Content;
 
             this.Loga($"Conteúdo lido: {(Content.Length > 0 ? Content.Length + " caracteres" : "VAZIO")}");
         }
@@ -854,26 +973,77 @@ namespace Anoteitor
         {
             try
             {
+                if (this.IsDirty)
+                {
+                    controlContentTextBox.BackColor = SystemColors.Window; // Branco = alteracao em andamento
+                    return;
+                }
+
                 if (!File.Exists(this.Filename))
                 {
                     controlContentTextBox.BackColor = SystemColors.Window; // Branco
                     return;
                 }
 
-                // ✅ Usar DATA DE MODIFICAÇÃO, não nome do arquivo
-                DateTime lastWrite = File.GetLastWriteTime(this.Filename);
-                string lastWriteDate = lastWrite.ToString("dd-MM-yyyy");
-                string today = Fun.Agora().ToShortDateString().Replace(@"/", "-");
+                if (ArquivoEhSnapshotHistorico(this.Filename))
+                {
+                    controlContentTextBox.BackColor = Color.AliceBlue; // Azul = visualizacao historica
+                    return;
+                }
 
-                if (lastWriteDate == today)
-                    controlContentTextBox.BackColor = SystemColors.Window; // Branco = hoje
-                else
-                    controlContentTextBox.BackColor = Color.AliceBlue; //  Color.LightBlue; // Azul = arquivo antigo
+                controlContentTextBox.BackColor = WorkingCopyEstaAlinhadoComHistorico(this.Filename)
+                    ? Color.AliceBlue   // Azul = sem alteracoes em relacao a base historica
+                    : SystemColors.Window; // Branco = working copy alterado
             }
             catch
             {
                 controlContentTextBox.BackColor = SystemColors.Window; // Fallback branco
             }
+        }
+
+        private bool ArquivoEhSnapshotHistorico(string path)
+        {
+            string nome = Path.GetFileNameWithoutExtension(path);
+            return Regex.IsMatch(nome, @"\^\d{2}-\d{2}-\d{4}$");
+        }
+
+        private bool WorkingCopyEstaAlinhadoComHistorico(string workingCopyPath)
+        {
+            string diretorio = Path.GetDirectoryName(workingCopyPath);
+            if (string.IsNullOrEmpty(diretorio) || !Directory.Exists(diretorio))
+                return false;
+
+            string nomeBase = Path.GetFileNameWithoutExtension(workingCopyPath);
+            string workingCopyConteudo = SanitizeControlCharacters(File.ReadAllText(workingCopyPath, Encoding.UTF8));
+
+            FileInfo ultimoHistorico = new DirectoryInfo(diretorio)
+                .GetFiles(nomeBase + "^*.txt")
+                .Where(f => Regex.IsMatch(Path.GetFileNameWithoutExtension(f.Name), @"\^\d{2}-\d{2}-\d{4}$"))
+                .OrderByDescending(f => ExtrairDataSnapshot(f.Name))
+                .FirstOrDefault();
+
+            if (ultimoHistorico == null)
+                return false;
+
+            string historicoConteudo = SanitizeControlCharacters(File.ReadAllText(ultimoHistorico.FullName, Encoding.UTF8));
+            return string.Equals(workingCopyConteudo, historicoConteudo, StringComparison.Ordinal);
+        }
+
+        private DateTime ExtrairDataSnapshot(string nomeArquivo)
+        {
+            Match match = Regex.Match(nomeArquivo, @"(\d{2}-\d{2}-\d{4})\.txt$");
+            if (match.Success &&
+                DateTime.TryParseExact(
+                    match.Groups[1].Value,
+                    "dd-MM-yyyy",
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None,
+                    out DateTime data))
+            {
+                return data;
+            }
+
+            return DateTime.MinValue;
         }
 
         private string ReadAllText(string path, Encoding encoding = null)
@@ -970,16 +1140,33 @@ namespace Anoteitor
             get { return controlContentTextBox.Text; }
             set
             {
-                controlContentTextBox.Text = SanitizeControlCharacters(value);
+                DefinirTextoEditorProgramaticamente(SanitizeControlCharacters(value));
             }
         }
 
         private void controlContentTextBox_TextChanged(object sender, EventArgs e)
         {
+            if (_suppressEditorChangeTracking)
+            {
+                _lastKnownEditorText = controlContentTextBox.Text;
+                return;
+            }
+
+            string previousText = _lastKnownEditorText;
             SanitizeEditorTextIfNeeded();
 
+            if (_suppressEditorChangeTracking)
+                return;
+
+            string currentText = controlContentTextBox.Text;
+            if (currentText == previousText)
+                return;
+
             Console.WriteLine("controlContentTextBox_TextChanged");
+            RegistrarUndo(previousText);
+            _lastKnownEditorText = currentText;
             IsDirty = true;
+            this.AjustaCorFundo();
             if (this.Carregado)
             {
                 Console.WriteLine("Carregado = true");
@@ -1022,6 +1209,7 @@ namespace Anoteitor
             _isSanitizingContentText = true;
             try
             {
+                _suppressEditorChangeTracking = true;
                 controlContentTextBox.Text = sanitizedText;
 
                 int newSelectionStart = RemapIndexAfterSanitization(originalText, selectionStart);
@@ -1033,10 +1221,57 @@ namespace Anoteitor
             }
             finally
             {
+                _suppressEditorChangeTracking = false;
                 _isSanitizingContentText = false;
             }
 
             this.Loga("Caracteres de controle removidos do editor.");
+        }
+
+        private void DefinirTextoEditorProgramaticamente(string texto, int? selectionStart = null, int? selectionLength = null)
+        {
+            _suppressEditorChangeTracking = true;
+            try
+            {
+                controlContentTextBox.Text = texto ?? "";
+                controlContentTextBox.SelectionStart = Math.Max(0, Math.Min(selectionStart ?? 0, controlContentTextBox.TextLength));
+                controlContentTextBox.SelectionLength = Math.Max(0, Math.Min(selectionLength ?? 0, controlContentTextBox.TextLength - controlContentTextBox.SelectionStart));
+                _lastKnownEditorText = controlContentTextBox.Text;
+            }
+            finally
+            {
+                _suppressEditorChangeTracking = false;
+            }
+        }
+
+        private void RegistrarUndo(string textoAnterior)
+        {
+            if (textoAnterior == null)
+                textoAnterior = "";
+
+            if (_undoSnapshots.Count > 0 && _undoSnapshots.Peek().Text == textoAnterior)
+                return;
+
+            _undoSnapshots.Push(new EditorSnapshot
+            {
+                Text = textoAnterior,
+                SelectionStart = Math.Min(SelectionStart, textoAnterior.Length),
+                SelectionLength = 0
+            });
+        }
+
+        private void DesfazerAlteracaoDoEditor()
+        {
+            if (_undoSnapshots.Count == 0)
+                return;
+
+            EditorSnapshot snapshot = _undoSnapshots.Pop();
+            DefinirTextoEditorProgramaticamente(snapshot.Text, snapshot.SelectionStart, snapshot.SelectionLength);
+            IsDirty = true;
+            this.AjustaCorFundo();
+
+            if (this.Carregado && this.SalvarAutom && controlContentTextBox.TextLength > 0)
+                timer1.Enabled = true;
         }
 
         private static int RemapIndexAfterSanitization(string text, int originalIndex)
@@ -1496,6 +1731,14 @@ namespace Anoteitor
 
         private void controlContentTextBox_KeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Control && e.KeyCode == Keys.Z)
+            {
+                DesfazerAlteracaoDoEditor();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+                return;
+            }
+
             if ((e.Control && e.KeyCode == Keys.V) || (e.Shift && e.KeyCode == Keys.Insert))
             {
                 PasteNormalizedClipboardText();
@@ -2117,12 +2360,12 @@ namespace Anoteitor
                 // ✅ Ler conteúdo DIRETAMENTE do arquivo especificado (sem lógica de working copy)
                 string content = ReadAllText(filePath, null);
                 Content = content;
-                controlContentTextBox.Text = Content;
 
                 // ✅ Configurar estado
                 this.Filename = filePath;
                 this.IsDirty = false;
                 this.Carregado = true;
+                ResetUndoDaAtividadeAtual();
 
                 // ✅ FORÇAR fundo AZUL para indicar visualização de histórico
                 controlContentTextBox.BackColor = Color.AliceBlue;

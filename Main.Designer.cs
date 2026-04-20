@@ -45,7 +45,9 @@ namespace Anoteitor
             this.menuitemFilePrint = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.toolStripMenuItem2 = new System.Windows.Forms.ToolStripMenuItem();
+            this.toolStripSeparator7 = new System.Windows.Forms.ToolStripSeparator();
             this.menuitemFileExit = new System.Windows.Forms.ToolStripMenuItem();
+            this.menuitemExecutarAtualizacao = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemEdit = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemEditUndo = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
@@ -97,7 +99,6 @@ namespace Anoteitor
             // 
             // controlContentTextBox
             // 
-            this.controlContentTextBox.AcceptsReturn = true;
             this.controlContentTextBox.AcceptsTab = true;
             this.controlContentTextBox.BackColor = System.Drawing.SystemColors.ControlLight;
             this.controlContentTextBox.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -152,6 +153,8 @@ namespace Anoteitor
             this.menuitemFilePrint,
             this.toolStripSeparator2,
             this.toolStripMenuItem2,
+            this.menuitemExecutarAtualizacao,
+            this.toolStripSeparator7,
             this.menuitemFileExit});
             this.fileToolStripMenuItem.Name = "fileToolStripMenuItem";
             this.fileToolStripMenuItem.Size = new System.Drawing.Size(61, 24);
@@ -233,6 +236,18 @@ namespace Anoteitor
             this.menuitemFileExit.Size = new System.Drawing.Size(178, 22);
             this.menuitemFileExit.Text = "Sai&r";
             this.menuitemFileExit.Click += new System.EventHandler(this.menuitemFileExit_Click);
+            // 
+            // menuitemExecutarAtualizacao
+            // 
+            this.menuitemExecutarAtualizacao.Name = "menuitemExecutarAtualizacao";
+            this.menuitemExecutarAtualizacao.Size = new System.Drawing.Size(197, 22);
+            this.menuitemExecutarAtualizacao.Text = "Executar atualização...";
+            this.menuitemExecutarAtualizacao.Click += new System.EventHandler(this.menuitemExecutarAtualizacao_Click);
+            // 
+            // toolStripSeparator7
+            // 
+            this.toolStripSeparator7.Name = "toolStripSeparator7";
+            this.toolStripSeparator7.Size = new System.Drawing.Size(194, 6);
             // 
             // menuitemEdit
             // 
@@ -647,6 +662,8 @@ namespace Anoteitor
         private System.Windows.Forms.ToolStripMenuItem menuitemFilePrint;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
         private System.Windows.Forms.ToolStripMenuItem menuitemFileExit;
+        private System.Windows.Forms.ToolStripSeparator toolStripSeparator7;
+        private System.Windows.Forms.ToolStripMenuItem menuitemExecutarAtualizacao;
         private System.Windows.Forms.ToolStripMenuItem menuitemEdit;
         private System.Windows.Forms.ToolStripMenuItem menuitemEditFind;
         private System.Windows.Forms.ToolStripMenuItem menuitemEditFindNext;
