@@ -57,6 +57,15 @@ namespace Anoteitor
         private string _CurrentFileDate = "";
         private string _lastKnownEditorText = "";
         private readonly Stack<EditorSnapshot> _undoSnapshots = new Stack<EditorSnapshot>();
+        private readonly List<NavigationEntry> _navigationHistory = new List<NavigationEntry>();
+        private int _navigationHistoryIndex = -1;
+        private bool _isApplyingNavigationHistory = false;
+        private bool _suppressNavigationHistory = false;
+        private const string EditorFontDefaultFamily = "Lucida Console";
+        private const float EditorFontDefaultSize = 9.75f;
+        private const float ComboFontDefaultSize = 8.25f;
+        private const float ComboFontMinSize = 6f;
+        private const float ComboFontMaxSize = 24f;
 
         public string PastaGeral
         {
@@ -115,6 +124,13 @@ namespace Anoteitor
             public string Text;
             public int SelectionStart;
             public int SelectionLength;
+        }
+
+        private class NavigationEntry
+        {
+            public string Projeto;
+            public string Subprojeto;
+            public string Data;
         }
 
         public Main()
@@ -182,8 +198,8 @@ namespace Anoteitor
             menuitemFormatWordWrap.Checked = controlContentTextBox.WordWrap;
             try
             {
-                CurrentFont = Settings.CurrentFont;
-                this.controlContentTextBox.Font = CurrentFont;
+                Font fonteEditor = CurrentFont;
+                this.controlContentTextBox.Font = fonteEditor;
             }
             catch (Exception Ex)
             {
@@ -214,6 +230,9 @@ namespace Anoteitor
             this.MedeTempos = cIni.ReadBool("Projetos", "MedeTempos", true);
             this.timer2.Enabled = this.MedeTempos;
             this.temposToolStripMenuItem.Visible = this.MedeTempos;
+            AplicarFonteDosCombos(CurrentComboFont);
+            RegistrarNavegacaoAtual();  
+            AtualizarBotoesHistorico();
             // this.Carregado = true; 
         }
 
@@ -454,9 +473,7 @@ namespace Anoteitor
 
         private void menuitemEditDelete_Click(object sender, EventArgs e)
         {
-            if (SelectionLength == 0)
-                SelectionLength = 1;
-            SelectedText = "";
+            DeleteEditorSelectionOrNextCharacter();
         }
 
         private void menuitemEditSelectAll_Click(object sender, EventArgs e)
@@ -595,6 +612,16 @@ namespace Anoteitor
             FontDialog.Font = CurrentFont;
             if (FontDialog.ShowDialog(this) != DialogResult.OK) return;
             CurrentFont = FontDialog.Font;
+        }
+
+        private void menuitemFormatCombosMaior_Click(object sender, EventArgs e)
+        {
+            AlterarTamanhoFonteCombos(1f);
+        }
+
+        private void menuitemFormatCombosMenor_Click(object sender, EventArgs e)
+        {
+            AlterarTamanhoFonteCombos(-1f);
         }
 
         private void novaSubAtividadeToolStripMenuItem_Click(object sender, EventArgs e)
@@ -1410,13 +1437,109 @@ namespace Anoteitor
         {
             get
             {
-                return Settings.CurrentFont;
+                string familia = cIni.ReadString("Config", "EditorFontFamily", EditorFontDefaultFamily);
+                float tamanho = cIni.ReadFloat("Config", "EditorFontSize", EditorFontDefaultSize);
+                int estiloInt = cIni.ReadInt("Config", "EditorFontStyle", (int)FontStyle.Regular);
+
+                if (tamanho < 6f)
+                    tamanho = 6f;
+
+                if (tamanho > 72f)
+                    tamanho = 72f;
+
+                FontStyle estilo = FontStyle.Regular;
+                if (Enum.IsDefined(typeof(FontStyle), estiloInt))
+                    estilo = (FontStyle)estiloInt;
+
+                try
+                {
+                    return new Font(familia, tamanho, estilo);
+                }
+                catch
+                {
+                    return new Font(EditorFontDefaultFamily, EditorFontDefaultSize, FontStyle.Regular);
+                }
             }
             set
             {
-                controlContentTextBox.Font = Settings.CurrentFont = value;
-                Settings.Save();
+                controlContentTextBox.Font = value;
+                cIni.WriteString("Config", "EditorFontFamily", value.FontFamily.Name);
+                cIni.WriteFloat("Config", "EditorFontSize", value.Size);
+                cIni.WriteInt("Config", "EditorFontStyle", (int)value.Style);
             }
+        }
+
+        private Font CurrentComboFont
+        {
+            get
+            {
+                float tamanho = ComboFontDefaultSize;
+
+                try
+                {
+                    tamanho = cIni.ReadFloat("Config", "ComboFontSize", ComboFontDefaultSize);
+                }
+                catch (Exception ex)
+                {
+                    this.Loga("Erro ao ler tamanho da fonte dos combos: " + ex.Message);
+                }
+
+                if (tamanho < ComboFontMinSize)
+                    tamanho = ComboFontMinSize;
+
+                if (tamanho > ComboFontMaxSize)
+                    tamanho = ComboFontMaxSize;
+
+                Font baseFont = cbProjetos.Font ?? this.Font;
+                return new Font(baseFont.FontFamily, tamanho, baseFont.Style, baseFont.Unit);
+            }
+            set
+            {
+                AplicarFonteDosCombos(value);
+
+                try
+                {
+                    cIni.WriteFloat("Config", "ComboFontSize", value.Size);
+                }
+                catch (Exception ex)
+                {
+                    this.Loga("Erro ao salvar tamanho da fonte dos combos: " + ex.Message);
+                }
+            }
+        }
+
+        private void AplicarFonteDosCombos(Font fonte)
+        {
+            if (fonte == null)
+                return;
+
+            cbProjetos.Font = fonte;
+            cbSubprojeto.Font = fonte;
+            cbArquivos.Font = fonte;
+            cbProjetos.ComboBox.Font = fonte;
+            cbSubprojeto.ComboBox.Font = fonte;
+            cbArquivos.ComboBox.Font = fonte;
+            AjustarLarguraDosCombos();
+            menubarMain.PerformLayout();
+            this.PerformLayout();
+            this.Refresh();
+        }
+
+        private void AjustarLarguraDosCombos()
+        {
+            int larguraArquivos = Math.Max(110, MedirLarguraCombo(cbArquivos, "99/99/9999"));
+
+            cbProjetos.Size = new Size(155, cbProjetos.Height);
+            cbSubprojeto.Size = new Size(145, cbSubprojeto.Height);
+            cbArquivos.Size = new Size(larguraArquivos, cbArquivos.Height);
+            cbArquivos.DropDownWidth = larguraArquivos;
+        }
+
+        private int MedirLarguraCombo(ToolStripComboBox combo, string textoBase)
+        {
+            Font fonte = combo.ComboBox.Font ?? combo.Font ?? this.Font;
+            Size tamanhoTexto = TextRenderer.MeasureText(textoBase, fonte);
+            return tamanhoTexto.Width + SystemInformation.VerticalScrollBarWidth + 18;
         }
 
         public bool IsDirty
@@ -1729,6 +1852,87 @@ namespace Anoteitor
             set { controlContentTextBox.SelectionLength = value; }
         }
 
+        private void DeleteEditorSelectionOrNextCharacter()
+        {
+            if (SelectionLength == 0)
+            {
+                int nextCharacterLength = GetNextDeletableCharacterLength();
+                if (nextCharacterLength == 0)
+                    return;
+
+                SelectionLength = nextCharacterLength;
+            }
+
+            controlContentTextBox.SelectedText = "";
+        }
+
+        private int GetNextDeletableCharacterLength()
+        {
+            if (SelectionStart >= controlContentTextBox.TextLength)
+                return 0;
+
+            string text = controlContentTextBox.Text;
+            char current = text[SelectionStart];
+
+            if (current == '\r' && SelectionStart + 1 < text.Length && text[SelectionStart + 1] == '\n')
+                return 2;
+
+            return 1;
+        }
+
+        private bool TentarTabularSelecaoMultilinha()
+        {
+            if (SelectionLength <= 0)
+                return false;
+
+            int inicioSelecao = SelectionStart;
+            int fimSelecao = SelectionStart + SelectionLength;
+            int linhaInicial = controlContentTextBox.GetLineFromCharIndex(inicioSelecao);
+            int indiceFinalParaLinha = Math.Max(inicioSelecao, fimSelecao - 1);
+            int linhaFinal = controlContentTextBox.GetLineFromCharIndex(indiceFinalParaLinha);
+
+            if (linhaInicial >= linhaFinal)
+                return false;
+
+            string textoOriginal = controlContentTextBox.Text;
+            List<int> iniciosDasLinhas = new List<int>();
+            StringBuilder textoTabulado = new StringBuilder(textoOriginal);
+            int deslocamento = 0;
+
+            for (int linha = linhaInicial; linha <= linhaFinal; linha++)
+            {
+                int inicioLinha = controlContentTextBox.GetFirstCharIndexFromLine(linha);
+                if (inicioLinha < 0)
+                    continue;
+
+                iniciosDasLinhas.Add(inicioLinha);
+                textoTabulado.Insert(inicioLinha + deslocamento, '\t');
+                deslocamento++;
+            }
+
+            if (iniciosDasLinhas.Count == 0)
+                return false;
+
+            int tabsAntesDoInicio = iniciosDasLinhas.Count(indice => indice < inicioSelecao);
+            int tabsAntesDoFim = iniciosDasLinhas.Count(indice => indice < fimSelecao);
+            int novoInicioSelecao = inicioSelecao + tabsAntesDoInicio;
+            int novoFimSelecao = fimSelecao + tabsAntesDoFim;
+
+            RegistrarUndo(textoOriginal);
+            DefinirTextoEditorProgramaticamente(
+                textoTabulado.ToString(),
+                novoInicioSelecao,
+                Math.Max(0, novoFimSelecao - novoInicioSelecao));
+
+            IsDirty = true;
+            this.AjustaCorFundo();
+
+            if (this.Carregado && this.SalvarAutom && controlContentTextBox.TextLength > 0)
+                timer1.Enabled = true;
+
+            return true;
+        }
+
         private void controlContentTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Control && e.KeyCode == Keys.Z)
@@ -1739,11 +1943,46 @@ namespace Anoteitor
                 return;
             }
 
+            if (e.KeyCode == Keys.Tab && !e.Control && !e.Alt && !e.Shift)
+            {
+                if (TentarTabularSelecaoMultilinha())
+                {
+                    e.SuppressKeyPress = true;
+                    e.Handled = true;
+                    return;
+                }
+            }
+
+            if (e.Shift && e.KeyCode == Keys.Delete && !e.Control && !e.Alt)
+            {
+                controlContentTextBox.Cut();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Control && e.KeyCode == Keys.Insert && !e.Shift && !e.Alt)
+            {
+                controlContentTextBox.Copy();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+                return;
+            }
+
             if ((e.Control && e.KeyCode == Keys.V) || (e.Shift && e.KeyCode == Keys.Insert))
             {
                 PasteNormalizedClipboardText();
                 e.SuppressKeyPress = true;
                 e.Handled = true;
+                return;
+            }
+
+            if (e.KeyCode == Keys.Delete && !e.Alt && !e.Control && !e.Shift)
+            {
+                DeleteEditorSelectionOrNextCharacter();
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+                return;
             }
 
             UpdateStatusBar();
@@ -2033,23 +2272,203 @@ namespace Anoteitor
             this.Loga("CarregaArquivoDoProjeto finalizado - Carregado=" + this.Carregado);
         }
 
-        private void cbProjetos_DropDownClosed(object sender, EventArgs e)
+        private string NormalizarSubprojeto(string subprojeto)
         {
-            Console.WriteLine("cbProjetos_DropDownClosed");
+            return string.IsNullOrWhiteSpace(subprojeto) || subprojeto == "GERAL"
+                ? ""
+                : subprojeto;
+        }
 
-            // ✅ SALVAR antes de trocar
+        private string NormalizarDataNavegacao(string data)
+        {
+            if (string.IsNullOrWhiteSpace(data) || data == "TODAS")
+                return Fun.Agora().ToShortDateString();
+
+            return data;
+        }
+
+        private NavigationEntry ObterNavegacaoAtual()
+        {
+            if (string.IsNullOrWhiteSpace(this.Atual))
+                return null;
+
+            return new NavigationEntry
+            {
+                Projeto = this.Atual,
+                Subprojeto = NormalizarSubprojeto(this.SUbAtual),
+                Data = NormalizarDataNavegacao(this.cbArquivos.Text)
+            };
+        }
+
+        private bool MesmaNavegacao(NavigationEntry esquerda, NavigationEntry direita)
+        {
+            if (esquerda == null || direita == null)
+                return false;
+
+            return string.Equals(esquerda.Projeto, direita.Projeto, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(NormalizarSubprojeto(esquerda.Subprojeto), NormalizarSubprojeto(direita.Subprojeto), StringComparison.OrdinalIgnoreCase)
+                && string.Equals(NormalizarDataNavegacao(esquerda.Data), NormalizarDataNavegacao(direita.Data), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void RegistrarNavegacaoAtual()
+        {
+            if (_suppressNavigationHistory || _isApplyingNavigationHistory)
+            {
+                AtualizarBotoesHistorico();
+                return;
+            }
+
+            NavigationEntry atual = ObterNavegacaoAtual();
+            if (atual == null)
+            {
+                AtualizarBotoesHistorico();
+                return;
+            }
+
+            if (_navigationHistoryIndex >= 0 && MesmaNavegacao(_navigationHistory[_navigationHistoryIndex], atual))
+            {
+                AtualizarBotoesHistorico();
+                return;
+            }
+
+            if (_navigationHistoryIndex < _navigationHistory.Count - 1)
+            {
+                _navigationHistory.RemoveRange(
+                    _navigationHistoryIndex + 1,
+                    _navigationHistory.Count - (_navigationHistoryIndex + 1));
+            }
+
+            _navigationHistory.Add(atual);
+            _navigationHistoryIndex = _navigationHistory.Count - 1;
+            AtualizarBotoesHistorico();
+        }
+
+        private void AtualizarBotoesHistorico()
+        {
+            this.btnHistoricoVoltar.Enabled = _navigationHistoryIndex > 0;
+            this.btnHistoricoAvancar.Enabled = _navigationHistoryIndex >= 0 && _navigationHistoryIndex < _navigationHistory.Count - 1;
+        }
+
+        private void NavegarPeloHistorico(int deslocamento)
+        {
+            int novoIndice = _navigationHistoryIndex + deslocamento;
+            if (novoIndice < 0 || novoIndice >= _navigationHistory.Count)
+                return;
+
+            NavigationEntry destino = _navigationHistory[novoIndice];
+            _isApplyingNavigationHistory = true;
+            _suppressNavigationHistory = true;
+
+            try
+            {
+                AplicarNavegacao(destino);
+                _navigationHistoryIndex = novoIndice;
+            }
+            finally
+            {
+                _suppressNavigationHistory = false;
+                _isApplyingNavigationHistory = false;
+                AtualizarBotoesHistorico();
+            }
+        }
+
+        private void AplicarNavegacao(NavigationEntry destino)
+        {
+            if (destino == null || string.IsNullOrWhiteSpace(destino.Projeto))
+                return;
+
+            if (this.Carregado && this.IsDirty)
+                this.Save();
+
+            this.timer1.Enabled = false;
+
+            AplicarSelecaoProjeto(destino.Projeto);
+
+            string subprojetoDestino = NormalizarSubprojeto(destino.Subprojeto);
+            string dataDestino = NormalizarDataNavegacao(destino.Data);
+
+            if (!string.Equals(NormalizarSubprojeto(this.SUbAtual), subprojetoDestino, StringComparison.OrdinalIgnoreCase))
+                AplicarSelecaoSubprojeto(subprojetoDestino);
+
+            if (!string.Equals(NormalizarDataNavegacao(this.cbArquivos.Text), dataDestino, StringComparison.OrdinalIgnoreCase))
+                AplicarSelecaoData(dataDestino);
+        }
+
+        private void AplicarSelecaoProjeto(string projeto)
+        {
+            if (string.IsNullOrWhiteSpace(projeto))
+                return;
+
+            this.Atual = projeto;
+            this.cbProjetos.Text = projeto;
+            cIni.WriteString("Projetos", "Atual", projeto);
+            this.CarregaArquivoDoProjeto(true);
+            this.MostraArquivosDoProjeto();
+            this.AtualAnt = this.Atual;
+            this.VeSeTemSub(projeto);
+        }
+
+        private void AplicarSelecaoSubprojeto(string subprojeto)
+        {
+            string subprojetoTexto = string.IsNullOrWhiteSpace(subprojeto) ? "GERAL" : subprojeto;
+            string subprojetoAtual = string.IsNullOrWhiteSpace(this.SUbAtual) ? "GERAL" : this.SUbAtual;
+
+            if (subprojetoTexto == subprojetoAtual)
+                return;
+
             if (this.Carregado && this.IsDirty)
             {
+                this.Loga("Salvando antes de trocar de subatividade");
                 this.Save();
             }
 
-            // ✅ Desabilitar timer
-            this.timer1.Enabled = false;
+            string sData = Fun.Agora().ToShortDateString();
+            string data = sData.Replace(@"/", "-");
+            this.SUbAtual = subprojetoTexto;
+            this.cbSubprojeto.Text = subprojetoTexto;
+            cIni.WriteString(this.Atual, "SubAtual", this.SUbAtual);
 
-            this.Atual = cbProjetos.Text;
-            cIni.WriteString("Projetos", "Atual", cbProjetos.Text);
-            this.CarregaArquivoDoProjeto(true);
-            this.MostraArquivosDoProjeto();
+            this.timer1.Enabled = false;
+            this.Filename = NomeDoArquivo(data);
+            this.Loga("Abrindo novo arquivo: " + this.Filename);
+            this.Open(this.Filename);
+            this.cbArquivosSUbOld = this.SUbAtual;
+
+            renomearToolStripMenuItem.Enabled = (this.SUbAtual != "" && this.SUbAtual != "GERAL");
+            apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
+
+            string pastaSub = this.PastaGeral + @"\" + this.Atual +
+                             (string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL" ? "" : @"\" + this.SUbAtual);
+
+            this.PreencheComboArquivo(pastaSub);
+        }
+
+        private void AplicarSelecaoData(string dataSelecionada)
+        {
+            if (string.IsNullOrWhiteSpace(dataSelecionada) || dataSelecionada == "TODAS")
+                return;
+
+            this.cbArquivos.Text = dataSelecionada;
+            AtuArqASerMostrado();
+        }
+
+        private void cbProjetos_DropDownClosed(object sender, EventArgs e)
+        {
+            Console.WriteLine("cbProjetos_DropDownClosed");
+            if (string.Equals(this.Atual, cbProjetos.Text, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _suppressNavigationHistory = true;
+            try
+            {
+                AplicarSelecaoProjeto(cbProjetos.Text);
+            }
+            finally
+            {
+                _suppressNavigationHistory = false;
+            }
+
+            RegistrarNavegacaoAtual();
         }
 
         private void MostraArquivosDoProjeto()
@@ -2102,69 +2521,94 @@ namespace Anoteitor
 
         private void PreparaComboArquivo(string Pasta, bool mostrarTodas = false)
         {
-            this.Loga("[v2.1] PreparaComboArquivo");
+            this.Loga("[v2.15] PreparaComboArquivo");
 
             bool adicionarTodas = false;
-            if (this.mostrarSóDoDiaToolStripMenuItem.Checked == false)
+
+            if (this.mostrarSóDoDiaToolStripMenuItem.Checked)
+                return;
+
+            int LimArqs = cIni.ReadInt("Projetos", "LimArqs", 31);
+            List<DateTime> ArqsAdds = new List<DateTime>();
+
+            try
             {
-                int LimArqs = cIni.ReadInt("Projetos", "LimArqs", 31);
-                int QtdArqs = 0;
-                List<DateTime> ArqsAdds = new List<DateTime>();
-
-                try
+                DirectoryInfo info = new DirectoryInfo(Pasta);
+                if (!info.Exists)
                 {
-                    DirectoryInfo info = new DirectoryInfo(Pasta);
-                    if (!info.Exists)
-                    {
-                        Directory.CreateDirectory(Pasta);
-                        this.Loga("Pasta criada: " + Pasta);
-                    }
-
-                    FileInfo[] arquivos = info.GetFiles("*.txt").OrderBy(p => p.CreationTime).ToArray();
-
-                    foreach (FileInfo arquivo in arquivos)
-                    {
-                        string nome = arquivo.Name;
-                        DateTime data = this.GetDataPeloNome(nome);
-                        if (nome.IndexOf(this.Atual) > -1 && !ArqsAdds.Contains(data))
-                        {
-                            ArqsAdds.Add(data);
-                            QtdArqs++;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    this.Loga("Erro em PreparaComboArquivo: " + ex.Message);
+                    Directory.CreateDirectory(Pasta);
+                    this.Loga("Pasta criada: " + Pasta);
                 }
 
-                cbArquivos.Visible = true;
-                int Ini = QtdArqs - LimArqs;
-                if (mostrarTodas || Ini < 0)
-                    Ini = 0;
+                string prefixoHistorico;
+
+                if (string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL")
+                    prefixoHistorico = this.Atual + "^";
                 else
-                    adicionarTodas = true;
+                    prefixoHistorico = this.Atual + "^" + this.SUbAtual + "^";
 
-                cbArquivos.Items.Clear();
-                ArqsAdds.Sort();
+                FileInfo[] arquivos = info.GetFiles("*.txt")
+                    .OrderBy(p => p.CreationTime)
+                    .ToArray();
 
-                for (int i = Ini; i < QtdArqs; i++)
-                    cbArquivos.Items.Add(ArqsAdds[i].ToShortDateString());
-
-                string Data = Fun.Agora().ToShortDateString();
-                int Pos = cbArquivos.Items.IndexOf(Data);
-
-                if (Pos > -1)
-                    cbArquivos.SelectedIndex = Pos;
-                else
+                foreach (FileInfo arquivo in arquivos)
                 {
-                    cbArquivos.Items.Add(Data);
-                    cbArquivos.Text = Data;
+                    string nome = arquivo.Name;
+
+                    // Só aceita arquivo histórico real:
+                    // Projeto^Sub^DD-MM-AAAA.txt
+                    // ou Projeto^DD-MM-AAAA.txt no GERAL
+                    if (!nome.StartsWith(prefixoHistorico, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (!Regex.IsMatch(nome, @"\^\d{2}-\d{2}-\d{4}\.txt$", RegexOptions.IgnoreCase))
+                        continue;
+
+                    if (arquivo.Length <= 3)
+                    {
+                        this.Loga("Ignorando histórico vazio/só BOM: " + arquivo.FullName);
+                        continue;
+                    }
+
+                    DateTime data = this.GetDataPeloNome(nome);
+
+                    if (data == DateTime.MinValue)
+                        continue;
+
+                    if (!ArqsAdds.Contains(data))
+                        ArqsAdds.Add(data);
                 }
             }
+            catch (Exception ex)
+            {
+                this.Loga("Erro em PreparaComboArquivo: " + ex.Message);
+            }
+
+            cbArquivos.Visible = true;
+            cbArquivos.Items.Clear();
+
+            ArqsAdds.Sort();
+
+            int qtdArqs = ArqsAdds.Count;
+            int ini = qtdArqs - LimArqs;
+
+            if (mostrarTodas || ini < 0)
+                ini = 0;
+            else
+                adicionarTodas = true;
+
+            for (int i = ini; i < qtdArqs; i++)
+                cbArquivos.Items.Add(ArqsAdds[i].ToShortDateString());
+
+            string dataHoje = Fun.Agora().ToShortDateString();
+
+            if (!cbArquivos.Items.Contains(dataHoje))
+                cbArquivos.Items.Add(dataHoje);
+
+            cbArquivos.Text = dataHoje;
 
             if (adicionarTodas)
-                this.cbArquivos.Items.Add("TODAS");
+                cbArquivos.Items.Add("TODAS");
         }
 
         private string NomeDoArquivo(string Data, bool forcarDataEspecifica = false)
@@ -2269,6 +2713,8 @@ namespace Anoteitor
                 this.AtualAnt = this.Atual;
                 VeSeTemSub(Atual);
             }
+
+            RegistrarNavegacaoAtual();
         }
 
         private bool EhWorkingCopyAtual()
@@ -2334,16 +2780,45 @@ namespace Anoteitor
                 return;
             }
 
-            // 3) Para datas antigas: NÃO abrir 'mais próximo'
-            this.Loga($"⚠️ Nenhum arquivo exato encontrado para a data {cbArquivos.Text}");
+            // 3) Para datas antigas: buscar histórico anterior mais próximo com conteúdo
+            DateTime dataSelecionada;
 
-            MessageBox.Show(
-                $"Não existe arquivo salvo para a data {cbArquivos.Text}.",
-                "Anoteitor",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            if (!DateTime.TryParse(cbArquivos.Text, out dataSelecionada))
+            {
+                this.Loga($"⚠️ Data inválida no combo: {cbArquivos.Text}");
+                cbArquivos.Text = cbArquivosOld;
+                return;
+            }
 
-            // Volta a seleção anterior
+            string prefixoHistorico = this.Atual + "^" + nmSUb;
+
+            this.Loga($"🔎 Buscando histórico anterior mais próximo de {cbArquivos.Text}");
+
+            string historicoAnterior = EncontrarHistoricoAnteriorComConteudo(
+                pasta,
+                prefixoHistorico,
+                dataSelecionada);
+
+            if (!string.IsNullOrEmpty(historicoAnterior))
+            {
+                this.Loga($"✅ Histórico anterior encontrado: {historicoAnterior}");
+
+                this.OpenHistoricalFileOnly(historicoAnterior);
+
+                DateTime dataReal = GetDataPeloNome(Path.GetFileName(historicoAnterior));
+                string textoDataReal = dataReal.ToShortDateString();
+
+                this.cbArquivosOld = textoDataReal;
+                this.cbArquivos.Text = textoDataReal;
+
+                this.Loga($"🎨 Conteúdo histórico anterior carregado com fundo AZUL: {textoDataReal}");
+                return;
+            }
+
+            this.Loga($"⚠️ Nenhum histórico anterior com conteúdo encontrado para {cbArquivos.Text}");
+
+            // Sem MessageBox.
+            // Apenas volta a seleção anterior.
             cbArquivos.Text = cbArquivosOld;
         }
 
@@ -2396,8 +2871,20 @@ namespace Anoteitor
             Console.WriteLine("cbProjetos_KeyUp");
             if ((e.KeyCode == Keys.Down) || (e.KeyCode == Keys.Up))
             {
-                Atual = cbProjetos.Text;
-                AtuArqASerMostrado();
+                if (string.Equals(this.Atual, cbProjetos.Text, StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                _suppressNavigationHistory = true;
+                try
+                {
+                    AplicarSelecaoProjeto(cbProjetos.Text);
+                }
+                finally
+                {
+                    _suppressNavigationHistory = false;
+                }
+
+                RegistrarNavegacaoAtual();
             }
         }
 
@@ -2551,36 +3038,11 @@ namespace Anoteitor
             this.Loga("[v2.2] cbSubprojeto_SelectedIndexChanged");
             this.Loga("Carregado=" + this.Carregado + ", Text=" + cbSubprojeto.Text + ", Old=" + this.cbArquivosSUbOld);
 
-            // ✅ REMOVIDO: if (this.Carregado) — bloqueava carga inicial
-            if (cbSubprojeto.Text != this.cbArquivosSUbOld)
-            {
-                // ✅ Salvar antes de trocar SOMENTE se houver conteúdo não salvo
-                if (this.Carregado && this.IsDirty)
-                {
-                    this.Loga("Salvando antes de trocar de subatividade");
-                    this.Save();
-                }
+            if (cbSubprojeto.Text == this.cbArquivosSUbOld)
+                return;
 
-                string sData = Fun.Agora().ToShortDateString();
-                string Data = sData.Replace(@"/", "-");
-                this.SUbAtual = cbSubprojeto.Text;
-                cIni.WriteString(this.Atual, "SubAtual", this.SUbAtual);
-
-                this.timer1.Enabled = false; // Desabilitar timer durante transição
-
-                this.Filename = NomeDoArquivo(Data);
-                this.Loga("Abrindo novo arquivo: " + this.Filename);
-                this.Open(this.Filename); // ✅ Open() agora define Carregado = true
-                this.cbArquivosSUbOld = this.SUbAtual;
-
-                renomearToolStripMenuItem.Enabled = (this.SUbAtual != "" && this.SUbAtual != "GERAL");
-                apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
-
-                string PastaSub = this.PastaGeral + @"\" + this.Atual +
-                                 (string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL" ? "" : @"\" + this.SUbAtual);
-
-                this.PreencheComboArquivo(PastaSub);
-            }
+            AplicarSelecaoSubprojeto(cbSubprojeto.Text);
+            RegistrarNavegacaoAtual();
         }
 
         private void renomearToolStripMenuItem_Click(object sender, EventArgs e)
@@ -2678,7 +3140,7 @@ namespace Anoteitor
             {
                 Resultados resultWindow = null;
                 await ExecutarBusca(baseDirectory, searchText, token, rw => resultWindow = rw, () => resultWindow);
-                Invoke(new Action(() => { this.Text = "Anoteitor - Busca Concluída"; }));
+                Invoke(new Action(() => { this.Text = this.TitAplicativo + " - Busca Concluída"; }));
                 if (resultWindow == null)
                 {
                     MessageBox.Show("Nenhuma ocorrência encontrada.", "Anoteitor", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -2779,7 +3241,7 @@ namespace Anoteitor
             if (total > 0)
             {
                 int percent = (processed * 100) / total;
-                Invoke(new Action(() => { this.Text = $"Anoteitor - Buscando... {percent}%"; }));
+                Invoke(new Action(() => { this.Text = $"{this.TitAplicativo} - Buscando... {percent}%"; }));
             }
         }
 
@@ -2948,10 +3410,6 @@ namespace Anoteitor
                 // Mantém a configuração global do programa
                 this.CurrentFont = novaFonte;
 
-                // Salva permanentemente
-                Settings.CurrentFont = novaFonte;
-                Settings.Save();
-
                 this.Loga($"Fonte alterada para {novoTamanho}");
             }
             catch (Exception ex)
@@ -2964,11 +3422,95 @@ namespace Anoteitor
                     MessageBoxIcon.Error);
             }
         }
+
+        private void AlterarTamanhoFonteCombos(float delta)
+        {
+            try
+            {
+                Font fonteAtual = this.CurrentComboFont;
+                float novoTamanho = fonteAtual.Size + delta;
+
+                if (novoTamanho < ComboFontMinSize)
+                    novoTamanho = ComboFontMinSize;
+
+                if (novoTamanho > ComboFontMaxSize)
+                    novoTamanho = ComboFontMaxSize;
+
+                Font novaFonte = new Font(
+                    fonteAtual.FontFamily,
+                    novoTamanho,
+                    fonteAtual.Style,
+                    fonteAtual.Unit);
+
+                this.CurrentComboFont = novaFonte;
+                this.Loga($"Fonte dos combos alterada para {novoTamanho}");
+            }
+            catch (Exception ex)
+            {
+                this.Loga("Erro ao alterar fonte dos combos: " + ex.Message);
+                MessageBox.Show(
+                    "Erro ao alterar o tamanho da fonte dos combos.\n\n" + ex.Message,
+                    this.TitAplicativo,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
         private void btnFonteMais_Click(object sender, EventArgs e)
         {
             AlterarTamanhoFonte(1f);
         }
 
+        private void btnHistoricoVoltar_Click(object sender, EventArgs e)
+        {
+            NavegarPeloHistorico(-1);
+        }
+
+        private void btnHistoricoAvancar_Click(object sender, EventArgs e)
+        {
+            NavegarPeloHistorico(1);
+        }
+
+        private string EncontrarHistoricoAnteriorComConteudo(string pasta, string prefixoHistorico, DateTime dataSelecionada)
+        {
+            try
+            {
+                DirectoryInfo info = new DirectoryInfo(pasta);
+
+                if (!info.Exists)
+                    return null;
+
+                FileInfo[] arquivos = info.GetFiles("*.txt")
+                    .Where(f =>
+                        f.Name.StartsWith(prefixoHistorico, StringComparison.OrdinalIgnoreCase) &&
+                        Regex.IsMatch(f.Name, @"\^\d{2}-\d{2}-\d{4}\.txt$", RegexOptions.IgnoreCase) &&
+                        f.Length > 3)
+                    .OrderByDescending(f => GetDataPeloNome(f.Name))
+                    .ToArray();
+
+                foreach (FileInfo arquivo in arquivos)
+                {
+                    DateTime dataArquivo = GetDataPeloNome(arquivo.Name);
+
+                    if (dataArquivo == DateTime.MinValue)
+                        continue;
+
+                    if (dataArquivo.Date >= dataSelecionada.Date)
+                        continue;
+
+                    string conteudo = ReadAllText(arquivo.FullName, null);
+
+                    if (!string.IsNullOrWhiteSpace(conteudo))
+                        return arquivo.FullName;
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Loga("Erro em EncontrarHistoricoAnteriorComConteudo: " + ex.Message);
+            }
+
+            return null;
+        }
 
 
     }

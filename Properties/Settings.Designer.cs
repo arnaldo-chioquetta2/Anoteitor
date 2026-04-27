@@ -34,6 +34,18 @@ namespace Anoteitor.Properties {
                 this["CurrentFont"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("Microsoft Sans Serif, 8.25pt")]
+        public global::System.Drawing.Font ComboFont {
+            get {
+                return ((global::System.Drawing.Font)(this["ComboFont"]));
+            }
+            set {
+                this["ComboFont"] = value;
+            }
+        }
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]

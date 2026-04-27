@@ -68,6 +68,9 @@ namespace Anoteitor
             this.formatToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemFormatWordWrap = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemFormatFont = new System.Windows.Forms.ToolStripMenuItem();
+            this.menuitemFormatCombos = new System.Windows.Forms.ToolStripMenuItem();
+            this.menuitemFormatCombosMaior = new System.Windows.Forms.ToolStripMenuItem();
+            this.menuitemFormatCombosMenor = new System.Windows.Forms.ToolStripMenuItem();
             this.projetoToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.novoToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.subAtividadesToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -88,6 +91,8 @@ namespace Anoteitor
             this.cbProjetos = new System.Windows.Forms.ToolStripComboBox();
             this.cbSubprojeto = new System.Windows.Forms.ToolStripComboBox();
             this.cbArquivos = new System.Windows.Forms.ToolStripComboBox();
+            this.btnHistoricoVoltar = new System.Windows.Forms.ToolStripButton();
+            this.btnHistoricoAvancar = new System.Windows.Forms.ToolStripButton();
             this.controlStatusBar = new System.Windows.Forms.StatusStrip();
             this.toolStripStatusLabel1 = new System.Windows.Forms.ToolStripStatusLabel();
             this.lbTempDecorr = new System.Windows.Forms.ToolStripStatusLabel();
@@ -133,7 +138,9 @@ namespace Anoteitor
             this.btnFonteMais,
             this.cbProjetos,
             this.cbSubprojeto,
-            this.cbArquivos});
+            this.cbArquivos,
+            this.btnHistoricoVoltar,
+            this.btnHistoricoAvancar});
             this.menubarMain.Location = new System.Drawing.Point(0, 0);
             this.menubarMain.Name = "menubarMain";
             this.menubarMain.Padding = new System.Windows.Forms.Padding(0);
@@ -399,7 +406,8 @@ namespace Anoteitor
             // 
             this.formatToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.menuitemFormatWordWrap,
-            this.menuitemFormatFont});
+            this.menuitemFormatFont,
+            this.menuitemFormatCombos});
             this.formatToolStripMenuItem.Name = "formatToolStripMenuItem";
             this.formatToolStripMenuItem.Size = new System.Drawing.Size(49, 24);
             this.formatToolStripMenuItem.Text = "Fonte";
@@ -418,6 +426,29 @@ namespace Anoteitor
             this.menuitemFormatFont.Size = new System.Drawing.Size(134, 22);
             this.menuitemFormatFont.Text = "Fonte";
             this.menuitemFormatFont.Click += new System.EventHandler(this.menuitemFormatFont_Click);
+            // 
+            // menuitemFormatCombos
+            // 
+            this.menuitemFormatCombos.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.menuitemFormatCombosMaior,
+            this.menuitemFormatCombosMenor});
+            this.menuitemFormatCombos.Name = "menuitemFormatCombos";
+            this.menuitemFormatCombos.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFormatCombos.Text = "Combos";
+            // 
+            // menuitemFormatCombosMaior
+            // 
+            this.menuitemFormatCombosMaior.Name = "menuitemFormatCombosMaior";
+            this.menuitemFormatCombosMaior.Size = new System.Drawing.Size(112, 22);
+            this.menuitemFormatCombosMaior.Text = "Maior";
+            this.menuitemFormatCombosMaior.Click += new System.EventHandler(this.menuitemFormatCombosMaior_Click);
+            // 
+            // menuitemFormatCombosMenor
+            // 
+            this.menuitemFormatCombosMenor.Name = "menuitemFormatCombosMenor";
+            this.menuitemFormatCombosMenor.Size = new System.Drawing.Size(112, 22);
+            this.menuitemFormatCombosMenor.Text = "Menor";
+            this.menuitemFormatCombosMenor.Click += new System.EventHandler(this.menuitemFormatCombosMenor_Click);
             // 
             // projetoToolStripMenuItem
             // 
@@ -560,7 +591,7 @@ namespace Anoteitor
             // 
             this.cbProjetos.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cbProjetos.Name = "cbProjetos";
-            this.cbProjetos.Size = new System.Drawing.Size(130, 24);
+            this.cbProjetos.Size = new System.Drawing.Size(155, 24);
             this.cbProjetos.Sorted = true;
             this.cbProjetos.DropDownClosed += new System.EventHandler(this.cbProjetos_DropDownClosed);
             this.cbProjetos.SelectedIndexChanged += new System.EventHandler(this.cbProjetos_SelectedIndexChanged);
@@ -570,7 +601,7 @@ namespace Anoteitor
             // 
             this.cbSubprojeto.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cbSubprojeto.Name = "cbSubprojeto";
-            this.cbSubprojeto.Size = new System.Drawing.Size(121, 24);
+            this.cbSubprojeto.Size = new System.Drawing.Size(145, 24);
             this.cbSubprojeto.Visible = false;
             this.cbSubprojeto.SelectedIndexChanged += new System.EventHandler(this.cbSubprojeto_SelectedIndexChanged);
             // 
@@ -579,10 +610,32 @@ namespace Anoteitor
             this.cbArquivos.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cbArquivos.DropDownWidth = 79;
             this.cbArquivos.Name = "cbArquivos";
-            this.cbArquivos.Size = new System.Drawing.Size(90, 24);
+            this.cbArquivos.Size = new System.Drawing.Size(110, 24);
             this.cbArquivos.Visible = false;
             this.cbArquivos.DropDownClosed += new System.EventHandler(this.cbArquivos_DropDownClosed);
             this.cbArquivos.KeyUp += new System.Windows.Forms.KeyEventHandler(this.cbArquivos_KeyUp);
+            // 
+            // btnHistoricoVoltar
+            // 
+            this.btnHistoricoVoltar.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.btnHistoricoVoltar.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.btnHistoricoVoltar.Enabled = false;
+            this.btnHistoricoVoltar.Name = "btnHistoricoVoltar";
+            this.btnHistoricoVoltar.Size = new System.Drawing.Size(23, 21);
+            this.btnHistoricoVoltar.Text = "<";
+            this.btnHistoricoVoltar.ToolTipText = "Voltar para a anotacao anterior";
+            this.btnHistoricoVoltar.Click += new System.EventHandler(this.btnHistoricoVoltar_Click);
+            // 
+            // btnHistoricoAvancar
+            // 
+            this.btnHistoricoAvancar.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+            this.btnHistoricoAvancar.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+            this.btnHistoricoAvancar.Enabled = false;
+            this.btnHistoricoAvancar.Name = "btnHistoricoAvancar";
+            this.btnHistoricoAvancar.Size = new System.Drawing.Size(23, 21);
+            this.btnHistoricoAvancar.Text = ">";
+            this.btnHistoricoAvancar.ToolTipText = "Avancar para a proxima anotacao";
+            this.btnHistoricoAvancar.Click += new System.EventHandler(this.btnHistoricoAvancar_Click);
             // 
             // controlStatusBar
             // 
@@ -630,7 +683,7 @@ namespace Anoteitor
             this.MainMenuStrip = this.menubarMain;
             this.Name = "Main";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            this.Text = "{DocumentName} - Anoteitor";
+            this.Text = "{DocumentName} - Anoteitor {Versao}";
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.Main_FormClosing);
             this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.Main_FormClosed);
             this.Load += new System.EventHandler(this.Main_Load);
@@ -675,6 +728,9 @@ namespace Anoteitor
         private System.Windows.Forms.ToolStripMenuItem formatToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem menuitemFormatWordWrap;
         private System.Windows.Forms.ToolStripMenuItem menuitemFormatFont;
+        private System.Windows.Forms.ToolStripMenuItem menuitemFormatCombos;
+        private System.Windows.Forms.ToolStripMenuItem menuitemFormatCombosMaior;
+        private System.Windows.Forms.ToolStripMenuItem menuitemFormatCombosMenor;
         private System.Windows.Forms.ToolStripMenuItem helpToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem menuitemHelp;
         private System.Windows.Forms.ToolStripSeparator toolStripSeparator4;
@@ -711,5 +767,7 @@ namespace Anoteitor
         private System.Windows.Forms.ToolStripMenuItem toolStripMenuItem2;
         private System.Windows.Forms.ToolStripButton btnFonteMenos;
         private System.Windows.Forms.ToolStripButton btnFonteMais;
+        private System.Windows.Forms.ToolStripButton btnHistoricoVoltar;
+        private System.Windows.Forms.ToolStripButton btnHistoricoAvancar;
     }
 }
