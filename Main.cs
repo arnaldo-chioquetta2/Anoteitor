@@ -633,12 +633,25 @@ namespace Anoteitor
                 string Nome = cSubAtiv.Nome();
                 string sData = Fun.Agora().ToShortDateString();
                 string Data = sData.Replace(@"/", "-");
-                this.NomeArq = this.Atual + "^" + Nome + "^" + Data + ".txt";
-                this.Text = this.NomeArq + " - " + this.TitAplicativo;
-                toolStripStatusLabel1.Text = this.NomeArq;
                 this.SUbAtual = Nome;
                 int QtdSub = cSubAtiv.getQtdSub();
                 this.MotraArqSub(QtdSub);
+                string arquivoNovo = NomeDoArquivo(Data, true);
+                if (!File.Exists(arquivoNovo))
+                {
+                    string pastaNovo = Path.GetDirectoryName(arquivoNovo);
+                    if (!Directory.Exists(pastaNovo))
+                        Directory.CreateDirectory(pastaNovo);
+                    File.WriteAllText(arquivoNovo, "", Encoding.UTF8);
+                }
+
+                this.Filename = arquivoNovo;
+                DefinirTextoEditorProgramaticamente("");
+                this.IsDirty = false;
+                ResetUndoDaAtividadeAtual();
+                this.AjustaCorFundo();
+                this.Text = Path.GetFileName(arquivoNovo) + " - " + this.TitAplicativo;
+                toolStripStatusLabel1.Text = Path.GetFileName(arquivoNovo);
                 controlContentTextBox.BackColor = SystemColors.Window;
             }
         }
@@ -2479,9 +2492,19 @@ namespace Anoteitor
                 this.MotraArqSub(QtdSub);
             }
             else
+            {
+                this.SUbAtual = "";
+                this.cbArquivosSUbOld = "";
+                this.cbSubprojeto.Visible = false;
+                this.cbSubprojeto.Items.Clear();
+                this.cbSubprojeto.Text = "";
                 renomearToolStripMenuItem.Enabled = false;
+            }
             apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
-            this.PreencheComboArquivo(this.PastaGeral + @"\" + this.Atual + @"\" + this.SUbAtual);
+            string pastaAtual = this.PastaGeral + @"\" + this.Atual;
+            if (!string.IsNullOrWhiteSpace(this.SUbAtual) && this.SUbAtual != "GERAL")
+                pastaAtual += @"\" + this.SUbAtual;
+            this.PreencheComboArquivo(pastaAtual);
             this.cbArquivosOld = this.cbArquivos.Text;
         }
 
@@ -3037,6 +3060,9 @@ namespace Anoteitor
         {
             this.Loga("[v2.2] cbSubprojeto_SelectedIndexChanged");
             this.Loga("Carregado=" + this.Carregado + ", Text=" + cbSubprojeto.Text + ", Old=" + this.cbArquivosSUbOld);
+
+            if (!cbSubprojeto.Visible || cbSubprojeto.Items.Count == 0)
+                return;
 
             if (cbSubprojeto.Text == this.cbArquivosSUbOld)
                 return;

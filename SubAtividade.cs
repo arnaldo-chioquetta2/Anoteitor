@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace Anoteitor
@@ -17,6 +18,9 @@ namespace Anoteitor
             InitializeComponent();
             this.Atividade = Ativ;
             this.lbAtividade.Text = "Atividade: " + Ativ;
+            this.NomeSubAtividadeAnt = "";
+            txSub.Text = "";
+            txSub.BackColor = SystemColors.Window;
         }
 
         private void button2_Click(object sender, EventArgs e)
@@ -104,6 +108,7 @@ namespace Anoteitor
         {
             this.NomeSubAtividadeAnt = NomeSubAtividade;
             txSub.Text = NomeSubAtividade;
+            txSub.BackColor = SystemColors.Window;
         }
 
     }
