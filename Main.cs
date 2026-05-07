@@ -728,7 +728,7 @@ namespace Anoteitor
 
             toolStripStatusLabel1.Text = "Salvando arquivo";
 
-            // ✅ Working copy (sempre sem data)
+            // Working copy canônico: sempre sem data e nunca ^current.txt.
             string workingCopy = NomeDoArquivo("current");
             string directory = Path.GetDirectoryName(workingCopy);
 
@@ -750,15 +750,7 @@ namespace Anoteitor
                         // 🔥 FORÇAR nome com data (ESSENCIAL)
                         string historicPath = NomeDoArquivo(lastWriteDate, true);
 
-                        if (!File.Exists(historicPath))
-                        {
-                            File.Copy(workingCopy, historicPath);
-                            this.Loga($"✅ Snapshot criado (virada de dia): {historicPath}");
-                        }
-                        else
-                        {
-                            this.Loga($"ℹ️ Snapshot já existe para {lastWriteDate}");
-                        }
+                        CriarSnapshotSeNecessario(workingCopy, historicPath, "virada de dia");
                     }
                 }
 
@@ -787,6 +779,53 @@ namespace Anoteitor
         }
 
         #endregion
+
+        private void CriarSnapshotSeNecessario(string origem, string destino, string motivo)
+        {
+            if (string.IsNullOrWhiteSpace(origem) || !File.Exists(origem))
+                return;
+
+            if (new FileInfo(origem).Length <= 3)
+            {
+                this.Loga($"ℹ️ Snapshot ignorado ({motivo}): origem vazia/só BOM");
+                return;
+            }
+
+            string pastaDestino = Path.GetDirectoryName(destino);
+            if (!Directory.Exists(pastaDestino))
+                Directory.CreateDirectory(pastaDestino);
+
+            if (!File.Exists(destino))
+            {
+                File.Copy(origem, destino);
+                this.Loga($"✅ Snapshot criado ({motivo}): {destino}");
+                return;
+            }
+
+            string origemConteudo = SanitizeControlCharacters(File.ReadAllText(origem, _encoding ?? Encoding.UTF8));
+            string destinoConteudo = SanitizeControlCharacters(File.ReadAllText(destino, _encoding ?? Encoding.UTF8));
+            if (string.Equals(origemConteudo, destinoConteudo, StringComparison.Ordinal))
+            {
+                this.Loga($"ℹ️ Snapshot já existe para {Path.GetFileName(destino)}");
+                return;
+            }
+
+            string pasta = Path.GetDirectoryName(destino);
+            string nome = Path.GetFileNameWithoutExtension(destino);
+            string extensao = Path.GetExtension(destino);
+            int revisao = 2;
+            string destinoRevisao;
+
+            do
+            {
+                destinoRevisao = Path.Combine(pasta, $"{nome}~{revisao}{extensao}");
+                revisao++;
+            }
+            while (File.Exists(destinoRevisao));
+
+            File.Copy(origem, destinoRevisao);
+            this.Loga($"✅ Snapshot revisado criado ({motivo}): {destinoRevisao}");
+        }
 
         private bool SaveAs()
         {
@@ -1031,9 +1070,9 @@ namespace Anoteitor
                     return;
                 }
 
-                controlContentTextBox.BackColor = WorkingCopyEstaAlinhadoComHistorico(this.Filename)
-                    ? Color.AliceBlue   // Azul = sem alteracoes em relacao a base historica
-                    : SystemColors.Window; // Branco = working copy alterado
+                controlContentTextBox.BackColor = ArquivoFoiModificadoHoje(this.Filename)
+                    ? SystemColors.Window // Branco = houve alteração hoje
+                    : Color.AliceBlue;    // Azul = ainda não houve alteração hoje
             }
             catch
             {
@@ -1047,26 +1086,14 @@ namespace Anoteitor
             return Regex.IsMatch(nome, @"\^\d{2}-\d{2}-\d{4}$");
         }
 
-        private bool WorkingCopyEstaAlinhadoComHistorico(string workingCopyPath)
+        private bool ArquivoFoiModificadoHoje(string path)
         {
-            string diretorio = Path.GetDirectoryName(workingCopyPath);
-            if (string.IsNullOrEmpty(diretorio) || !Directory.Exists(diretorio))
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 return false;
 
-            string nomeBase = Path.GetFileNameWithoutExtension(workingCopyPath);
-            string workingCopyConteudo = SanitizeControlCharacters(File.ReadAllText(workingCopyPath, Encoding.UTF8));
-
-            FileInfo ultimoHistorico = new DirectoryInfo(diretorio)
-                .GetFiles(nomeBase + "^*.txt")
-                .Where(f => Regex.IsMatch(Path.GetFileNameWithoutExtension(f.Name), @"\^\d{2}-\d{2}-\d{4}$"))
-                .OrderByDescending(f => ExtrairDataSnapshot(f.Name))
-                .FirstOrDefault();
-
-            if (ultimoHistorico == null)
-                return false;
-
-            string historicoConteudo = SanitizeControlCharacters(File.ReadAllText(ultimoHistorico.FullName, Encoding.UTF8));
-            return string.Equals(workingCopyConteudo, historicoConteudo, StringComparison.Ordinal);
+            DateTime hoje = Fun.Agora().Date;
+            DateTime ultimaAlteracao = File.GetLastWriteTime(path).Date;
+            return ultimaAlteracao == hoje;
         }
 
         private DateTime ExtrairDataSnapshot(string nomeArquivo)
@@ -2649,6 +2676,15 @@ namespace Anoteitor
             }
             string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
 
+            string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
+            string workingCopyAntigo = Pasta + @"\" + this.Atual + "^" + nmSUb + "current.txt";
+
+            if (string.Equals(Data, "current", StringComparison.OrdinalIgnoreCase))
+            {
+                MigrarWorkingCopyAntigoSeNecessario(workingCopyAntigo, workingCopy);
+                return workingCopy;
+            }
+
             // ✅ Se forçar data específica, abrir EXATAMENTE o arquivo da data selecionada
             if (forcarDataEspecifica)
             {
@@ -2659,9 +2695,6 @@ namespace Anoteitor
             }
 
             // ✅ PRIORIDADE 1: Working copy SEM data (ex: Empregos^Cristian.txt)
-            string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
-
-            // Se working copy existe, usar ele
             if (File.Exists(workingCopy))
             {
                 this.Loga("Working copy encontrado: " + workingCopy);
@@ -2669,11 +2702,11 @@ namespace Anoteitor
             }
 
             // ✅ PRIORIDADE 2: Working copy ANTIGO (^current.txt) - migração
-            string workingCopyAntigo = Pasta + @"\" + this.Atual + "^" + nmSUb + "current.txt";
             if (File.Exists(workingCopyAntigo))
             {
                 this.Loga("Working copy antigo encontrado (^current.txt): " + workingCopyAntigo);
-                return workingCopyAntigo;
+                MigrarWorkingCopyAntigoSeNecessario(workingCopyAntigo, workingCopy);
+                return File.Exists(workingCopy) ? workingCopy : workingCopyAntigo;
             }
 
             // ✅ PRIORIDADE 3: Arquivo do dia atual (ex: Empregos^Cristian^17-03-2026.txt)
@@ -2682,6 +2715,39 @@ namespace Anoteitor
 
             this.Loga("Working copy não encontrado, usando arquivo do dia: " + todayFile);
             return todayFile;
+        }
+
+        private void MigrarWorkingCopyAntigoSeNecessario(string antigo, string correto)
+        {
+            if (string.IsNullOrWhiteSpace(antigo) || string.IsNullOrWhiteSpace(correto) || !File.Exists(antigo))
+                return;
+
+            try
+            {
+                string pastaCorreta = Path.GetDirectoryName(correto);
+                if (!Directory.Exists(pastaCorreta))
+                    Directory.CreateDirectory(pastaCorreta);
+
+                if (!File.Exists(correto) || new FileInfo(correto).Length <= 3)
+                {
+                    File.Copy(antigo, correto, true);
+                    this.Loga($"✅ Working copy antigo migrado para formato correto: {correto}");
+                    return;
+                }
+
+                string antigoConteudo = SanitizeControlCharacters(File.ReadAllText(antigo, Encoding.UTF8));
+                string corretoConteudo = SanitizeControlCharacters(File.ReadAllText(correto, Encoding.UTF8));
+                if (!string.Equals(antigoConteudo, corretoConteudo, StringComparison.Ordinal))
+                {
+                    string dataAntigo = File.GetLastWriteTime(antigo).ToString("dd-MM-yyyy");
+                    string snapshotAntigo = NomeDoArquivo(dataAntigo, true);
+                    CriarSnapshotSeNecessario(antigo, snapshotAntigo, "migração de ^current.txt");
+                }
+            }
+            catch (Exception ex)
+            {
+                this.Loga($"❌ Erro ao migrar working copy antigo: {ex.Message}");
+            }
         }
 
         private void AtuArqASerMostrado()
