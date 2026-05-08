@@ -56,6 +56,7 @@ namespace Anoteitor
         private PageSettings _PageSettings;
         private string _CurrentFileDate = "";
         private string _lastKnownEditorText = "";
+        private string _arquivoOrigemConteudoHistorico = "";
         private readonly Stack<EditorSnapshot> _undoSnapshots = new Stack<EditorSnapshot>();
         private readonly List<NavigationEntry> _navigationHistory = new List<NavigationEntry>();
         private int _navigationHistoryIndex = -1;
@@ -753,12 +754,17 @@ namespace Anoteitor
                         CriarSnapshotSeNecessario(workingCopy, historicPath, "virada de dia");
                     }
                 }
+                else
+                {
+                    CriarSnapshotInicialSePossivel();
+                }
 
                 // ✅ Salvar working copy (estado atual)
                 File.WriteAllText(workingCopy, SanitizeControlCharacters(Content), _encoding ?? Encoding.UTF8);
 
                 IsDirty = false;
                 this.Filename = workingCopy;
+                this._arquivoOrigemConteudoHistorico = "";
 
                 this.Loga($"Working copy salvo: {workingCopy} ({Tam} bytes)");
 
@@ -827,6 +833,29 @@ namespace Anoteitor
             this.Loga($"✅ Snapshot revisado criado ({motivo}): {destinoRevisao}");
         }
 
+        private void CriarSnapshotInicialSePossivel()
+        {
+            string origem = "";
+
+            if (!string.IsNullOrWhiteSpace(this._arquivoOrigemConteudoHistorico) && File.Exists(this._arquivoOrigemConteudoHistorico))
+                origem = this._arquivoOrigemConteudoHistorico;
+            else if (!string.IsNullOrWhiteSpace(this.Filename) && File.Exists(this.Filename) && ArquivoEhSnapshotHistorico(this.Filename))
+                origem = this.Filename;
+
+            if (string.IsNullOrWhiteSpace(origem))
+            {
+                this.Loga("ℹ️ Snapshot inicial não criado: nenhuma origem histórica disponível");
+                return;
+            }
+
+            DateTime data = GetDataPeloNome(Path.GetFileName(origem));
+            if (data == DateTime.MinValue)
+                data = File.GetLastWriteTime(origem);
+
+            string destino = NomeDoArquivo(data.ToString("dd-MM-yyyy"), true);
+            CriarSnapshotSeNecessario(origem, destino, "primeiro salvamento do working copy");
+        }
+
         private bool SaveAs()
         {
             var SaveDialog = new SaveOpenDialog();
@@ -856,6 +885,7 @@ namespace Anoteitor
         {
             this.Loga($"[v2.13] Open: {pFilename}");
             Console.WriteLine($"Abrindo {pFilename}");
+            this._arquivoOrigemConteudoHistorico = "";
 
             // ✅ Passo 1: Determinar arquivo correto (working copy ou migração)
             string arquivoFinal = DeterminarArquivoCorreto(pFilename);
@@ -886,7 +916,9 @@ namespace Anoteitor
         // ✅ MÉTODO 7: Finalizar abertura do arquivo (15 linhas)
         private void FinalizarAbertura(string arquivoFinal)
         {
-            this.Filename = arquivoFinal;
+            this.Filename = !string.IsNullOrWhiteSpace(this._arquivoOrigemConteudoHistorico)
+                ? this._arquivoOrigemConteudoHistorico
+                : arquivoFinal;
             IsDirty = false;
             toolStripStatusLabel1.Text = "";
             this.AjustaCorFundo();
@@ -943,21 +975,13 @@ namespace Anoteitor
                         string conteudo = SanitizeControlCharacters(File.ReadAllText(arquivo.FullName, Encoding.UTF8));
                     if (conteudo.Length > 3) // Conteúdo real além do BOM
                     {
+                        this._arquivoOrigemConteudoHistorico = arquivo.FullName;
                         Content = conteudo;
                         controlContentTextBox.BackColor = Color.LightBlue; // Azul = baseado em histórico
                         IsDirty = true;
 
                         this.Loga($"✅ Conteúdo carregado de: {arquivo.Name} ({Content.Length} bytes)");
 
-                        // Salvar imediatamente no working copy
-                        string pastaArq = Path.GetDirectoryName(arquivoAtual);
-                        string nomeBase = Path.GetFileNameWithoutExtension(arquivoAtual).Split('^')[0];
-                        string workingCopy = Path.Combine(pastaArq, nomeBase + ".txt");
-
-                        File.WriteAllText(workingCopy, SanitizeControlCharacters(Content), Encoding.UTF8);
-                        this.Loga($"✅ Conteúdo salvo no working copy: {workingCopy}");
-
-                        this.Filename = workingCopy;
                         IsDirty = false;
                         return;
                     }
@@ -1233,6 +1257,7 @@ namespace Anoteitor
             RegistrarUndo(previousText);
             _lastKnownEditorText = currentText;
             IsDirty = true;
+            SelecionarHojeNoComboArquivo();
             this.AjustaCorFundo();
             if (this.Carregado)
             {
@@ -2651,14 +2676,46 @@ namespace Anoteitor
                 cbArquivos.Items.Add(ArqsAdds[i].ToShortDateString());
 
             string dataHoje = Fun.Agora().ToShortDateString();
+            string dataSelecionada = DataParaComboArquivoAtual(dataHoje);
+
+            if (!cbArquivos.Items.Contains(dataSelecionada))
+                cbArquivos.Items.Add(dataSelecionada);
+
+            if (ArquivoFoiModificadoHoje(this.Filename) && !cbArquivos.Items.Contains(dataHoje))
+                cbArquivos.Items.Add(dataHoje);
+
+            cbArquivos.Text = dataSelecionada;
+
+            if (adicionarTodas)
+                cbArquivos.Items.Add("TODAS");
+        }
+
+        private string DataParaComboArquivoAtual(string dataPadrao)
+        {
+            if (!string.IsNullOrWhiteSpace(this._arquivoOrigemConteudoHistorico) && File.Exists(this._arquivoOrigemConteudoHistorico))
+            {
+                DateTime dataOrigem = GetDataPeloNome(Path.GetFileName(this._arquivoOrigemConteudoHistorico));
+                if (dataOrigem != DateTime.MinValue)
+                    return dataOrigem.ToShortDateString();
+
+                return File.GetLastWriteTime(this._arquivoOrigemConteudoHistorico).ToShortDateString();
+            }
+
+            if (!string.IsNullOrWhiteSpace(this.Filename) && File.Exists(this.Filename) && !ArquivoFoiModificadoHoje(this.Filename))
+                return File.GetLastWriteTime(this.Filename).ToShortDateString();
+
+            return dataPadrao;
+        }
+
+        private void SelecionarHojeNoComboArquivo()
+        {
+            string dataHoje = Fun.Agora().ToShortDateString();
 
             if (!cbArquivos.Items.Contains(dataHoje))
                 cbArquivos.Items.Add(dataHoje);
 
             cbArquivos.Text = dataHoje;
-
-            if (adicionarTodas)
-                cbArquivos.Items.Add("TODAS");
+            cbArquivosOld = dataHoje;
         }
 
         private string NomeDoArquivo(string Data, bool forcarDataEspecifica = false)
@@ -2676,7 +2733,10 @@ namespace Anoteitor
             }
             string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
 
-            string workingCopy = Pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
+            string nomeWorkingCopy = string.IsNullOrEmpty(nmSUb)
+                ? this.Atual
+                : this.Atual + "^" + nmSUb.TrimEnd('^');
+            string workingCopy = Pasta + @"\" + nomeWorkingCopy + ".txt";
             string workingCopyAntigo = Pasta + @"\" + this.Atual + "^" + nmSUb + "current.txt";
 
             if (string.Equals(Data, "current", StringComparison.OrdinalIgnoreCase))
