@@ -2716,6 +2716,7 @@ namespace Anoteitor
 
             cbArquivos.Text = dataHoje;
             cbArquivosOld = dataHoje;
+            RegistrarNavegacaoAtual();
         }
 
         private string NomeDoArquivo(string Data, bool forcarDataEspecifica = false)
