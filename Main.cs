@@ -59,14 +59,29 @@ namespace Anoteitor
         private string _arquivoOrigemConteudoHistorico = "";
         private readonly Stack<EditorSnapshot> _undoSnapshots = new Stack<EditorSnapshot>();
         private readonly List<NavigationEntry> _navigationHistory = new List<NavigationEntry>();
+        private readonly List<ToolStripComboBox> _combosSubtarefas = new List<ToolStripComboBox>();
+        private readonly List<string> _caminhoSubtarefas = new List<string>();
+        private ComboBox _comboHierarquiaSelecionado;
+        private int _nivelHierarquiaSelecionado = -1;
+        private ContextMenuStrip _menuContextoHierarquia;
+        private ComboBox _comboContextoHierarquia;
+        private int _nivelContextoHierarquia = -1;
+        private ToolStripMenuItem _itemContextoRenomear;
+        private ToolStripMenuItem _itemContextoApagar;
+        private ToolStripMenuItem _itemContextoNova;
+        private ToolStripMenuItem _itemContextoCriarSubTarefa;
+        private ToolStripSeparator _separadorContextoHierarquia;
         private int _navigationHistoryIndex = -1;
         private bool _isApplyingNavigationHistory = false;
         private bool _suppressNavigationHistory = false;
+        private bool _atualizandoCombosSubtarefas = false;
         private const string EditorFontDefaultFamily = "Lucida Console";
         private const float EditorFontDefaultSize = 9.75f;
         private const float ComboFontDefaultSize = 8.25f;
         private const float ComboFontMinSize = 6f;
         private const float ComboFontMaxSize = 24f;
+        private readonly Color _corComboNormal = SystemColors.Window;
+        private readonly Color _corComboSelecionado = Color.LightYellow;
 
         public string PastaGeral
         {
@@ -137,6 +152,13 @@ namespace Anoteitor
         public Main()
         {
             InitializeComponent();
+            projetoToolStripMenuItem.Visible = false;
+            _combosSubtarefas.Add(cbSubprojeto);
+            cbSubprojeto.Overflow = ToolStripItemOverflow.AsNeeded;
+            cbProjetos.Tag = -1;
+            InicializarMenuContextoHierarquia();
+            AssociarMenuContextoHierarquia(cbProjetos, -1);
+            AssociarMenuContextoHierarquia(cbSubprojeto, 0);
             // this.Escolhido = new cEscolhido();
             Fun = new Funcoes();
             string etc = " ";
@@ -627,61 +649,39 @@ namespace Anoteitor
 
         private void novaSubAtividadeToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            SubAtividade cSubAtiv = new SubAtividade(Atual);
-            cSubAtiv.ShowDialog();
-            if (cSubAtiv.DialogResult == DialogResult.OK)
-            {
-                string Nome = cSubAtiv.Nome();
-                string sData = Fun.Agora().ToShortDateString();
-                string Data = sData.Replace(@"/", "-");
-                this.SUbAtual = Nome;
-                int QtdSub = cSubAtiv.getQtdSub();
-                this.MotraArqSub(QtdSub);
-                string arquivoNovo = NomeDoArquivo(Data, true);
-                if (!File.Exists(arquivoNovo))
-                {
-                    string pastaNovo = Path.GetDirectoryName(arquivoNovo);
-                    if (!Directory.Exists(pastaNovo))
-                        Directory.CreateDirectory(pastaNovo);
-                    File.WriteAllText(arquivoNovo, "", Encoding.UTF8);
-                }
-
-                this.Filename = arquivoNovo;
-                DefinirTextoEditorProgramaticamente("");
-                this.IsDirty = false;
-                ResetUndoDaAtividadeAtual();
-                this.AjustaCorFundo();
-                this.Text = Path.GetFileName(arquivoNovo) + " - " + this.TitAplicativo;
-                toolStripStatusLabel1.Text = Path.GetFileName(arquivoNovo);
-                controlContentTextBox.BackColor = SystemColors.Window;
-            }
+            ToolStripComboBox comboPai = _combosSubtarefas.Count > 0
+                ? _combosSubtarefas[_combosSubtarefas.Count - 1]
+                : cbSubprojeto;
+            CriarSubtarefaAbaixoDoCombo(comboPai);
         }
 
         private void apagarToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Mensagem frmMensagem = new Mensagem();
-            frmMensagem.Titulo = this.SUbAtual;
-            frmMensagem.Tipo = "Sub Tarefa";
-            string PastaAtual = this.PastaGeral + @"\" + this.Atual;
-            frmMensagem.PastaAtual = PastaAtual;
-            frmMensagem.Atual = this.Atual;
-            int QtdSub = cIni.ReadInt(this.Atual, "QtdSub", 0);
-            frmMensagem.QtdSub = QtdSub;
-            frmMensagem.ShowDialog();
-            if (frmMensagem.DialogResult == DialogResult.OK)
-            {
-                cbSubprojeto.SelectedIndex = 0;
-                this.SUbAtual = "GERAL";
-                if ((QtdSub - 1) > 0)
-                {
-                    MotraArqSub(QtdSub);
-                }
-                else
-                {
-                    cbSubprojeto.Visible = false;
-                    apagarToolStripMenuItem.Enabled = false;
-                }
-            }
+            if (_caminhoSubtarefas.Count == 0)
+                return;
+
+            List<string> caminhoAntigo = new List<string>(_caminhoSubtarefas);
+            string nome = caminhoAntigo[caminhoAntigo.Count - 1];
+            DialogResult resposta = MessageBox.Show(
+                this,
+                "Tem certeza que deseja excluir a sub-tarefa '" + nome + "' e todo o conteúdo abaixo dela?",
+                this.TitAplicativo,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            if (resposta != DialogResult.Yes)
+                return;
+
+            string pasta = PastaDaSubtarefa(caminhoAntigo);
+            Directory.Delete(pasta, true);
+
+            List<string> caminhoPai = caminhoAntigo.Take(caminhoAntigo.Count - 1).ToList();
+            _caminhoSubtarefas.Clear();
+            _caminhoSubtarefas.AddRange(caminhoPai);
+            cIni.WriteString(this.Atual, "CaminhoAtual", CaminhoSubtarefasAtual());
+            AtualizarEstadoCaminhoSubtarefas();
+            CarregarHierarquiaSubtarefas();
+            AbrirAnotacaoDaHierarquiaAtual(true);
+            AtualizarMenuSubAtividades();
         }
 
         #endregion
@@ -1579,11 +1579,14 @@ namespace Anoteitor
                 return;
 
             cbProjetos.Font = fonte;
-            cbSubprojeto.Font = fonte;
             cbArquivos.Font = fonte;
             cbProjetos.ComboBox.Font = fonte;
-            cbSubprojeto.ComboBox.Font = fonte;
             cbArquivos.ComboBox.Font = fonte;
+            foreach (ToolStripComboBox combo in _combosSubtarefas)
+            {
+                combo.Font = fonte;
+                combo.ComboBox.Font = fonte;
+            }
             AjustarLarguraDosCombos();
             menubarMain.PerformLayout();
             this.PerformLayout();
@@ -1595,7 +1598,8 @@ namespace Anoteitor
             int larguraArquivos = Math.Max(110, MedirLarguraCombo(cbArquivos, "99/99/9999"));
 
             cbProjetos.Size = new Size(155, cbProjetos.Height);
-            cbSubprojeto.Size = new Size(145, cbSubprojeto.Height);
+            foreach (ToolStripComboBox combo in _combosSubtarefas)
+                combo.Size = new Size(145, combo.Height);
             cbArquivos.Size = new Size(larguraArquivos, cbArquivos.Height);
             cbArquivos.DropDownWidth = larguraArquivos;
         }
@@ -2189,16 +2193,64 @@ namespace Anoteitor
                     int pos = cbProjetos.FindString(Atual);
                     cbProjetos.SelectedIndex = pos;
                 }
-                Escolhido.usado = true;
+                try
+                {
+                    this.Escolhido = new cEscolhido();
+                    Escolhido.usado = true;
+                }
+                catch (Exception)
+                {
+                    // throw;
+                }
                 Escolhido.Nome = "";
                 IsDirty = true;
                 NovaTarefa = true;
+                LimparEstadoSubtarefasAoTrocarProjeto();
                 subAtividadesToolStripMenuItem.Enabled = true;
                 renomearToolStripMenuItem1.Enabled = true;
 
             }
             this.CarregaArquivoDoProjeto(true);
         }
+
+        private void LimparEstadoSubtarefasAoTrocarProjeto()
+        {
+            _caminhoSubtarefas.Clear();
+            cIni.WriteString(this.Atual, "CaminhoAtual", "");
+            cIni.WriteString(this.Atual, "SubAtual", "GERAL");
+            LimparCombosSubtarefas();
+            AtualizarEstadoCaminhoSubtarefas();
+            AtualizarMenuSubAtividades();
+        }
+
+        private void LimparCombosSubtarefas()
+        {
+            foreach (ToolStripComboBox combo in _combosSubtarefas.ToList())
+            {
+                if (combo == null)
+                    continue;
+
+                if (combo == cbSubprojeto)
+                    continue;
+
+                if (menubarMain.Items.Contains(combo))
+                    menubarMain.Items.Remove(combo);
+
+                combo.Dispose();
+            }
+
+            _combosSubtarefas.Clear();
+
+            if (cbSubprojeto != null && !cbSubprojeto.IsDisposed)
+            {
+                if (!_combosSubtarefas.Contains(cbSubprojeto))
+                    _combosSubtarefas.Add(cbSubprojeto);
+
+                cbSubprojeto.Visible = false;
+                cbSubprojeto.Items.Clear();
+                cbSubprojeto.Text = string.Empty;
+            }
+        }        
 
         private void PreencheCombo(string Atual)
         {
@@ -2235,76 +2287,715 @@ namespace Anoteitor
 
         private void VeSeTemSub(string EssaAtivi)
         {
+            if (!string.IsNullOrWhiteSpace(EssaAtivi))
+                subAtividadesToolStripMenuItem.Enabled = true;
+
             int QtdSub = this.cIni.ReadInt(EssaAtivi, "QtdSub", 0);
             this.Loga("Lendo do Ini a quantidade de SubAtividades da Atividade " + EssaAtivi);
             this.Loga("QtdSub = " + QtdSub.ToString());
-            if (QtdSub > 0)
+            if (QtdSub > 0 || TemSubpastas(Path.Combine(this.PastaGeral, EssaAtivi)))
                 this.MotraArqSub(QtdSub);
             else
             {
                 cbSubprojeto.Visible = false;
                 renomearToolStripMenuItem1.Enabled = false;
+                AtualizarMenuSubAtividades();
             }
         }
 
         private void MotraArqSub(int QtdSub)
         {
-            cbSubprojeto.Visible = true;
-            cbSubprojeto.Items.Clear();
-            string DtHoje = Fun.Agora().ToShortDateString();
-            string PastaAtual = this.PastaGeral + @"\" + this.Atual;
-            bool AdicGeral = true;
-            if (this.mostrarSóDoDiaToolStripMenuItem.Checked)
-                AdicGeral = this.TemArqHoje(PastaAtual, ref DtHoje);
-            if (AdicGeral)
-                cbSubprojeto.Items.Add("GERAL");
-            this.SUbAtual = cIni.ReadString(this.Atual, "SubAtual", "");
-            this.Loga("SUbAtual = " + this.SUbAtual);
-            List<String> Subs = new List<String>();
-            for (int i = 0; i < QtdSub; i++)
-            {
-                string nmSubAtiv = "Sub" + (i + 1).ToString();
-                string Nome = this.cIni.ReadString(this.Atual, nmSubAtiv, "");
-                if (Nome.Length > 0)
-                    Subs.Add(Nome);
-            }
-            Subs.Sort();
-            for (int i = 0; i < Subs.Count; i++)
-            {
-                string Nome = Subs[i];
-                bool Adic = true;
-                if (this.mostrarSóDoDiaToolStripMenuItem.Checked)
-                {
-                    string PastaSub = PastaAtual + @"\" + Nome;
-                    Adic = this.TemArqHoje(PastaSub, ref DtHoje);
-                }
-                if (Adic)
-                {
-                    this.Loga("Adicionado na Sub " + Nome);
-                    cbSubprojeto.Items.Add(Nome);
-                    if (Nome == this.SUbAtual)
-                    {
-                        try
-                        {
-                            cbSubprojeto.SelectedIndex = i + 1;
-                        }
-                        catch (Exception)
-                        {
-                            cbSubprojeto.SelectedIndex = cbSubprojeto.Items.Count - 1;
-                        }
-                    }
-                }
+            CarregarHierarquiaSubtarefas();
+        }
 
-            }
-            if (this.SUbAtual == "")
-            // if (this.SUbAtual == "GERAL")
+        private void InicializarMenuContextoHierarquia()
+        {
+            _menuContextoHierarquia = new ContextMenuStrip();
+
+            _itemContextoNova = new ToolStripMenuItem("Nova");
+            _itemContextoRenomear = new ToolStripMenuItem("Renomear");
+            _itemContextoApagar = new ToolStripMenuItem("Apagar");
+            _itemContextoCriarSubTarefa = new ToolStripMenuItem("Criar Sub Tarefa");
+            _separadorContextoHierarquia = new ToolStripSeparator();
+
+            _itemContextoNova.Click += (s, e) => NovaHierarquiaContexto();
+            _itemContextoRenomear.Click += (s, e) => RenomearHierarquiaContexto();
+            _itemContextoApagar.Click += (s, e) => ApagarHierarquiaContexto();
+            _itemContextoCriarSubTarefa.Click += (s, e) => CriarSubTarefaHierarquiaContexto();
+
+            _menuContextoHierarquia.Items.Add(_itemContextoNova);
+            _menuContextoHierarquia.Items.Add(_itemContextoRenomear);
+            _menuContextoHierarquia.Items.Add(_itemContextoApagar);
+            _menuContextoHierarquia.Items.Add(new ToolStripSeparator());
+            _menuContextoHierarquia.Items.Add(_itemContextoCriarSubTarefa);
+        }
+
+        private void PrepararMenuContextoHierarquia()
+        {
+            _itemContextoNova.Visible = true;
+            _itemContextoRenomear.Visible = true;
+            _itemContextoApagar.Visible = true;
+            _itemContextoCriarSubTarefa.Visible = true;
+        }
+
+        private void AssociarMenuContextoHierarquia(ToolStripComboBox combo, int nivel)
+        {
+            if (combo == null)
+                return;
+
+            combo.ComboBox.MouseDown += (s, e) =>
             {
-                renomearToolStripMenuItem.Enabled = false;
-                cbSubprojeto.SelectedIndex = cbSubprojeto.FindStringExact("GERAL");
+                if (e.Button != MouseButtons.Right || _menuContextoHierarquia == null)
+                    return;
+
+                _comboContextoHierarquia = combo.ComboBox;
+                _nivelContextoHierarquia = nivel;
+                PrepararMenuContextoHierarquia();
+                _menuContextoHierarquia.Show(combo.ComboBox, e.Location);
+            };
+        }
+
+        private List<string> CaminhoDoContextoHierarquia()
+        {
+            if (_nivelContextoHierarquia < 0)
+                return new List<string>();
+
+            if (_caminhoSubtarefas == null || _caminhoSubtarefas.Count == 0)
+                return new List<string>();
+
+            int nivel = Math.Min(_nivelContextoHierarquia, _caminhoSubtarefas.Count - 1);
+
+            return _caminhoSubtarefas
+                .Take(nivel + 1)
+                .ToList();
+        }
+
+        private List<string> CaminhoPaiMesmoNivelDoContexto()
+        {
+            if (_nivelContextoHierarquia <= 0)
+                return new List<string>();
+
+            if (_caminhoSubtarefas == null || _caminhoSubtarefas.Count == 0)
+                return new List<string>();
+
+            int quantidadePai = Math.Min(_nivelContextoHierarquia, _caminhoSubtarefas.Count);
+
+            return _caminhoSubtarefas
+                .Take(quantidadePai)
+                .ToList();
+        }
+
+        private void NovaSubAtividadeHierarquiaContexto()
+        {
+            NovaHierarquiaContexto();
+        }
+
+        private void NovaHierarquiaContexto()
+        {
+            if (_nivelContextoHierarquia < 0)
+            {
+                novoToolStripMenuItem_Click(null, EventArgs.Empty);
+                return;
+            }
+
+            var caminhoPai = CaminhoPaiMesmoNivelDoContexto();
+            CriarSubtarefaAbaixoDoCaminho(caminhoPai);
+        }
+
+        private void CriarSubTarefaHierarquiaContexto()
+        {
+            string texto = Convert.ToString(_comboContextoHierarquia?.SelectedItem);
+            if (string.IsNullOrWhiteSpace(texto))
+                texto = _comboContextoHierarquia?.Text;
+
+            bool ehGeral = string.Equals(texto, "GERAL", StringComparison.OrdinalIgnoreCase);
+
+            if (ehGeral && _nivelContextoHierarquia >= 0)
+            {
+                var caminhoPaiMesmoNivel = CaminhoPaiMesmoNivelDoContexto();
+                CriarSubtarefaAbaixoDoCaminho(caminhoPaiMesmoNivel);
+                return;
+            }
+
+            List<string> caminhoPai;
+
+            if (_nivelContextoHierarquia < 0)
+            {
+                caminhoPai = new List<string>();
             }
             else
-                renomearToolStripMenuItem.Enabled = true;
+            {
+                caminhoPai = CaminhoDoContextoHierarquia();
+            }
+
+            CriarSubtarefaAbaixoDoCaminho(caminhoPai);
+        }
+
+        private void RenomearHierarquiaContexto()
+        {
+            if (_nivelContextoHierarquia < 0)
+            {
+                renomearToolStripMenuItem1_Click(this, EventArgs.Empty);
+                return;
+            }
+
+            RenomearSubatividadePorNivel(_nivelContextoHierarquia);
+        }
+
+        private void ApagarHierarquiaContexto()
+        {
+            if (_comboContextoHierarquia == null)
+                return;
+
+            string texto = Convert.ToString(_comboContextoHierarquia.SelectedItem);
+            if (string.IsNullOrWhiteSpace(texto))
+                texto = _comboContextoHierarquia.Text;
+
+            if (string.Equals(texto, "GERAL", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (_nivelContextoHierarquia < 0)
+            {
+                toolStripMenuItem1_Click(this, EventArgs.Empty);
+                return;
+            }
+
+            ApagarSubatividadePorNivel(_nivelContextoHierarquia);
+        }
+
+        private void ApagarSubatividade()
+        {
+            if (_caminhoSubtarefas == null || _caminhoSubtarefas.Count == 0)
+                return;
+
+            ApagarSubatividadePorNivel(_caminhoSubtarefas.Count - 1);
+        }
+
+        private void ApagarSubatividadePorNivel(int nivel)
+        {
+            if (_caminhoSubtarefas == null || _caminhoSubtarefas.Count == 0)
+                return;
+
+            if (nivel < 0 || nivel >= _caminhoSubtarefas.Count)
+                return;
+
+            List<string> caminhoAtualCompleto = new List<string>(_caminhoSubtarefas);
+            string nome = caminhoAtualCompleto[nivel];
+
+            if (string.Equals(nome, "GERAL", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            List<string> caminhoParaApagar = caminhoAtualCompleto
+                .Take(nivel + 1)
+                .ToList();
+
+            string pastaParaApagar = PastaDaSubtarefa(caminhoParaApagar);
+
+            if (!Directory.Exists(pastaParaApagar))
+            {
+                MessageBox.Show(
+                    "A pasta da subtarefa não foi encontrada:\n\n" + pastaParaApagar,
+                    "Apagar",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            DialogResult resp = MessageBox.Show(
+                "Deseja apagar a subtarefa \"" + nome + "\" e todas as subtarefas abaixo dela?",
+                "Confirmar exclusão",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+
+            if (resp != DialogResult.Yes)
+                return;
+
+            try
+            {
+                Directory.Delete(pastaParaApagar, true);
+
+                List<string> caminhoPai = caminhoAtualCompleto
+                    .Take(nivel)
+                    .ToList();
+
+                _caminhoSubtarefas.Clear();
+                _caminhoSubtarefas.AddRange(caminhoPai);
+
+                cIni.WriteString(this.Atual, "CaminhoAtual", CaminhoSubtarefasAtual());
+
+                AtualizarEstadoCaminhoSubtarefas();
+                CarregarHierarquiaSubtarefas();
+                AbrirAnotacaoDaHierarquiaAtual(true);
+                AtualizarMenuSubAtividades();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    "Não foi possível apagar a subtarefa.\n\n" + ex.Message,
+                    "Erro ao apagar",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private void AtualizarMenuSubAtividades()
+        {
+            const string nomeSeparador = "menuSubAtividadeHierarquiaSeparador";
+            const string nomeMenuHierarquia = "menuSubAtividadeHierarquia";
+            bool temSubatividadeSelecionada = _caminhoSubtarefas.Count > 0;
+
+            renomearToolStripMenuItem.Visible = temSubatividadeSelecionada;
+            apagarToolStripMenuItem.Visible = temSubatividadeSelecionada;
+
+            for (int i = subAtividadesToolStripMenuItem.DropDownItems.Count - 1; i >= 0; i--)
+            {
+                ToolStripItem item = subAtividadesToolStripMenuItem.DropDownItems[i];
+                if (item.Name == nomeSeparador || item.Name == nomeMenuHierarquia)
+                    subAtividadesToolStripMenuItem.DropDownItems.RemoveAt(i);
+            }
+
+            ToolStripSeparator separador = new ToolStripSeparator();
+            separador.Name = nomeSeparador;
+            ToolStripMenuItem menuHierarquia = new ToolStripMenuItem("Sub-atividade");
+            menuHierarquia.Name = nomeMenuHierarquia;
+
+            if (temSubatividadeSelecionada)
+            {
+                separador.Visible = true;
+                menuHierarquia.Visible = true;
+                PreencherMenuSubAtividades(menuHierarquia.DropDownItems, 0, Math.Max(1, _caminhoSubtarefas.Count));
+                subAtividadesToolStripMenuItem.DropDownItems.Add(separador);
+                subAtividadesToolStripMenuItem.DropDownItems.Add(menuHierarquia);
+            }
+            else
+            {
+                menuHierarquia.Visible = false;
+            }
+        }
+
+        private void PreencherMenuSubAtividades(ToolStripItemCollection itens, int nivel, int profundidadeTotal)
+        {
+            if (nivel < 0 || nivel >= profundidadeTotal)
+                return;
+
+            List<string> caminhoAtual = _caminhoSubtarefas.Take(Math.Min(nivel + 1, _caminhoSubtarefas.Count)).ToList();
+
+            if (caminhoAtual.Count == 0)
+            {
+                ToolStripMenuItem novaSo = new ToolStripMenuItem("Nova");
+                novaSo.Click += (sender, e) => CriarSubtarefaAbaixoDoCaminho(new List<string>());
+                itens.Add(novaSo);
+                return;
+            }
+
+            ToolStripMenuItem nova = new ToolStripMenuItem("Nova");
+            nova.Click += (sender, e) => CriarSubtarefaAbaixoDoCaminho(new List<string>());
+            itens.Add(nova);
+
+            itens.Add(CriarItemAcaoSubatividade("Renomear", () => RenomearSubatividade(caminhoAtual)));
+            itens.Add(CriarItemAcaoSubatividade("Apagar", () => ApagarSubatividade(caminhoAtual)));
+            itens.Add(new ToolStripSeparator());
+
+            ToolStripMenuItem submenu = new ToolStripMenuItem("Sub-atividade");
+            itens.Add(submenu);
+            List<string> caminhoFilho = new List<string>(caminhoAtual);
+            ToolStripMenuItem itemNovaFilha = new ToolStripMenuItem("Nova");
+            itemNovaFilha.Click += (s, e) =>
+            {
+                CriarSubtarefaAbaixoDoCaminho(caminhoFilho);
+            };
+            submenu.DropDownItems.Add(itemNovaFilha);
+        }
+
+        private ToolStripMenuItem CriarItemAcaoSubatividade(string texto, Action acao)
+        {
+            ToolStripMenuItem item = new ToolStripMenuItem(texto);
+            item.Click += (sender, e) => acao();
+            return item;
+        }
+
+        private void CarregarHierarquiaSubtarefas()
+        {
+            string caminhoSalvo = cIni.ReadString(this.Atual, "CaminhoAtual", "");
+            if (string.IsNullOrWhiteSpace(caminhoSalvo))
+                caminhoSalvo = cIni.ReadString(this.Atual, "SubAtual", "");
+
+            string[] partes = caminhoSalvo
+                .Split(new[] { '\\', '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+            _atualizandoCombosSubtarefas = true;
+            try
+            {
+                _comboHierarquiaSelecionado = null;
+                RemoverCombosSubtarefasDepoisDoNivel(0);
+                _caminhoSubtarefas.Clear();
+                PopularComboSubtarefa(cbSubprojeto, PastaDoProjetoAtual(), true);
+                cbSubprojeto.Visible = cbSubprojeto.Items.Count > 1;
+
+                ToolStripComboBox comboAtual = cbSubprojeto;
+                for (int nivel = 0; nivel < partes.Length; nivel++)
+                {
+                    int indice = comboAtual.FindStringExact(partes[nivel]);
+                    if (indice < 0)
+                        break;
+
+                    comboAtual.SelectedIndex = indice;
+                    _caminhoSubtarefas.Add(partes[nivel]);
+
+                    string pastaAtual = PastaDaSubtarefaAtual();
+                    if (!TemSubpastas(pastaAtual))
+                        break;
+
+                    comboAtual = CriarComboSubtarefaDinamico();
+                    PopularComboSubtarefa(comboAtual, pastaAtual, false);
+                }
+
+                if (_caminhoSubtarefas.Count == 0 && cbSubprojeto.Items.Count > 0)
+                    cbSubprojeto.SelectedIndex = cbSubprojeto.FindStringExact("GERAL");
+
+                AtualizarEstadoCaminhoSubtarefas();
+                AtualizarMenuSubAtividades();
+            }
+            finally
+            {
+                _atualizandoCombosSubtarefas = false;
+            }
+        }
+
+        private void PopularComboSubtarefa(ToolStripComboBox combo, string pastaPai, bool primeiroNivel)
+        {
+            combo.Items.Clear();
+            AdicionarItemUnico(combo.Items, "GERAL");
+
+            SortedSet<string> nomes = new SortedSet<string>(StringComparer.CurrentCultureIgnoreCase);
+            if (Directory.Exists(pastaPai))
+            {
+                foreach (string pasta in Directory.GetDirectories(pastaPai))
+                    nomes.Add(Path.GetFileName(pasta));
+            }
+
+            if (primeiroNivel)
+            {
+                int qtdSub = cIni.ReadInt(this.Atual, "QtdSub", 0);
+                for (int i = 1; i <= qtdSub; i++)
+                {
+                    string nome = cIni.ReadString(this.Atual, "Sub" + i, "");
+                    if (!string.IsNullOrWhiteSpace(nome) && Directory.Exists(Path.Combine(pastaPai, nome)))
+                        nomes.Add(nome);
+                }
+            }
+
+            foreach (string nome in nomes)
+                AdicionarItemUnico(combo.Items, nome);
+
+            combo.Visible = combo.Items.Count > 1;
+        }
+
+        private void AdicionarItemUnico(System.Windows.Forms.ComboBox.ObjectCollection items, string valor)
+        {
+            if (string.IsNullOrWhiteSpace(valor))
+                return;
+
+            foreach (object item in items)
+            {
+                if (string.Equals(Convert.ToString(item), valor, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+
+            items.Add(valor);
+        }
+
+        private ToolStripComboBox CriarComboSubtarefaDinamico()
+        {
+            ToolStripComboBox combo = new ToolStripComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Size = new Size(145, cbSubprojeto.Height),
+                Font = cbSubprojeto.Font,
+                Name = "cbSubprojetoNivel" + (_combosSubtarefas.Count + 1),
+                Overflow = ToolStripItemOverflow.AsNeeded
+            };
+
+            combo.Tag = _combosSubtarefas.Count;
+
+            int nivelCombo = combo.Tag is int n ? n : _combosSubtarefas.Count;
+
+            AssociarMenuContextoHierarquia(combo, nivelCombo);
+
+            combo.SelectedIndexChanged += cbSubprojeto_SelectedIndexChanged;
+
+            int indiceDatas = menubarMain.Items.IndexOf(cbArquivos);
+            menubarMain.Items.Insert(indiceDatas, combo);
+
+            _combosSubtarefas.Add(combo);
+
+            return combo;
+        }
+
+        private void RemoverCombosSubtarefasDepoisDoNivel(int nivel)
+        {
+            for (int i = _combosSubtarefas.Count - 1; i > nivel; i--)
+            {
+                ToolStripComboBox combo = _combosSubtarefas[i];
+                menubarMain.Items.Remove(combo);
+                combo.Dispose();
+                _combosSubtarefas.RemoveAt(i);
+            }
+        }
+
+        private bool TemSubpastas(string pasta)
+        {
+            return Directory.Exists(pasta) && Directory.GetDirectories(pasta).Length > 0;
+        }
+
+        private string PastaDoProjetoAtual()
+        {
+            return Path.Combine(this.PastaGeral, this.Atual);
+        }
+
+        private string PastaDaSubtarefaAtual()
+        {
+            string pasta = PastaDoProjetoAtual();
+            foreach (string parte in _caminhoSubtarefas)
+                pasta = Path.Combine(pasta, parte);
+            return pasta;
+        }
+
+        private string PastaDaSubtarefa(IEnumerable<string> caminhoSubtarefas)
+        {
+            string pasta = PastaDoProjetoAtual();
+            foreach (string parte in caminhoSubtarefas)
+                pasta = Path.Combine(pasta, parte);
+            return pasta;
+        }
+
+        private string CaminhoSubtarefasAtual()
+        {
+            return string.Join("\\", _caminhoSubtarefas);
+        }
+
+        private string CaminhoSubtarefasAtual(IEnumerable<string> caminhoSubtarefas)
+        {
+            return string.Join("\\", caminhoSubtarefas);
+        }
+
+        private string NomeBaseAnotacaoAtual()
+        {
+            if (_caminhoSubtarefas.Count == 0)
+                return this.Atual;
+
+            return this.Atual + "^" + string.Join("^", _caminhoSubtarefas);
+        }
+
+        private string NomeBaseAnotacao(IEnumerable<string> caminhoSubtarefas)
+        {
+            List<string> caminho = caminhoSubtarefas.ToList();
+            if (caminho.Count == 0)
+                return this.Atual;
+
+            return this.Atual + "^" + string.Join("^", caminho);
+        }
+
+        private void CarregarCaminhoSubtarefasPersistido()
+        {
+            string caminho = cIni.ReadString(this.Atual, "CaminhoAtual", "");
+            if (string.IsNullOrWhiteSpace(caminho))
+                caminho = cIni.ReadString(this.Atual, "SubAtual", "");
+
+            _caminhoSubtarefas.Clear();
+            string pastaAtual = PastaDoProjetoAtual();
+
+            foreach (string parte in caminho.Split(new[] { '\\', '/', '|' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (parte == "GERAL")
+                    continue;
+
+                string pastaFilha = Path.Combine(pastaAtual, parte);
+                if (!Directory.Exists(pastaFilha))
+                    break;
+
+                _caminhoSubtarefas.Add(parte);
+                pastaAtual = pastaFilha;
+            }
+            this._SUbAtual = CaminhoSubtarefasAtual();
+        }
+
+        private void AtualizarEstadoCaminhoSubtarefas()
+        {
+            string caminho = CaminhoSubtarefasAtual();
+            this._SUbAtual = caminho;
+            cIni.WriteString(this.Atual, "CaminhoAtual", caminho);
+            cIni.WriteString(this.Atual, "SubAtual", _caminhoSubtarefas.Count > 0 ? _caminhoSubtarefas[0] : "GERAL");
+            renomearToolStripMenuItem.Enabled = _caminhoSubtarefas.Count > 0;
             apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
+            if (this.Atual.Length > 0)
+                AtualizarMenuSubAtividades();
+        }
+
+        private void CriarSubtarefaAbaixoDoCombo(ToolStripComboBox combo)
+        {
+            int nivel = _combosSubtarefas.IndexOf(combo);
+            if (nivel < 0)
+                nivel = _combosSubtarefas.Count - 1;
+
+            List<string> caminhoPai = _caminhoSubtarefas.Take(Math.Min(nivel + 1, _caminhoSubtarefas.Count)).ToList();
+            CriarSubtarefaAbaixoDoCaminho(caminhoPai);
+        }
+
+        private void CriarSubtarefaAbaixoDoCaminho(List<string> caminhoPai)
+        {
+            string tituloPai = caminhoPai.Count == 0 ? this.Atual : caminhoPai[caminhoPai.Count - 1];
+            SubAtividade dialogo = new SubAtividade(tituloPai, true);
+            dialogo.ShowDialog();
+            if (dialogo.DialogResult != DialogResult.OK)
+                return;
+
+            string nome = dialogo.Nome();
+            if (nome.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                MessageBox.Show(this, "O nome contém caracteres inválidos.", this.TitAplicativo);
+                return;
+            }
+
+            string pastaPai = PastaDaSubtarefa(caminhoPai);
+            string novaPasta = Path.Combine(pastaPai, nome);
+            if (Directory.Exists(novaPasta))
+            {
+                MessageBox.Show(this, "Já existe uma sub-tarefa com este nome.", this.TitAplicativo);
+                return;
+            }
+
+            Directory.CreateDirectory(novaPasta);
+            List<string> novoCaminho = new List<string>(caminhoPai);
+            novoCaminho.Add(nome);
+
+            _caminhoSubtarefas.Clear();
+            _caminhoSubtarefas.AddRange(novoCaminho);
+            cIni.WriteString(this.Atual, "CaminhoAtual", CaminhoSubtarefasAtual());
+            AtualizarEstadoCaminhoSubtarefas();
+            CarregarHierarquiaSubtarefas();
+            AbrirAnotacaoDaHierarquiaAtual(true);
+        }
+
+        private void RenomearSubatividade(List<string> caminhoAtual)
+        {
+            if (caminhoAtual == null)
+                return;
+
+            RenomearSubatividadePorNivel(caminhoAtual.Count - 1);
+        }
+
+        private void RenomearSubatividadePorNivel(int nivel)
+        {
+            if (nivel < 0 || nivel >= _caminhoSubtarefas.Count)
+                return;
+
+            List<string> caminhoAtualCompleto = new List<string>(_caminhoSubtarefas);
+            string nomeAntigo = caminhoAtualCompleto[nivel];
+            SubAtividade dialogo = new SubAtividade(nomeAntigo, true);
+            dialogo.SetNomeSubAtividade(nomeAntigo);
+            dialogo.ShowDialog();
+            if (dialogo.DialogResult != DialogResult.OK)
+                return;
+
+            string nomeNovo = dialogo.Nome();
+            if (nomeNovo == nomeAntigo)
+                return;
+            if (nomeNovo.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                MessageBox.Show(this, "O nome contém caracteres inválidos.", this.TitAplicativo);
+                return;
+            }
+
+            List<string> caminhoPai = caminhoAtualCompleto.Take(nivel).ToList();
+            List<string> caminhoAntigoRenomeado = new List<string>(caminhoPai);
+            caminhoAntigoRenomeado.Add(nomeAntigo);
+            string pastaAtual = PastaDaSubtarefa(caminhoAntigoRenomeado);
+
+            List<string> caminhoNovoRenomeado = new List<string>(caminhoPai);
+            caminhoNovoRenomeado.Add(nomeNovo);
+            string pastaNova = PastaDaSubtarefa(caminhoNovoRenomeado);
+
+            if (Directory.Exists(pastaNova))
+            {
+                MessageBox.Show(this, "Já existe uma sub-tarefa com este nome.", this.TitAplicativo);
+                return;
+            }
+            if (!Directory.Exists(pastaAtual))
+            {
+                MessageBox.Show(this, "A pasta original não foi encontrada.", this.TitAplicativo);
+                return;
+            }
+
+            string prefixoAntigo = NomeBaseAnotacao(caminhoAtualCompleto);
+            Directory.Move(pastaAtual, pastaNova);
+
+            caminhoAtualCompleto[nivel] = nomeNovo;
+            string prefixoNovo = NomeBaseAnotacao(caminhoAtualCompleto);
+            RenomearArquivosDaHierarquia(pastaNova, prefixoAntigo, prefixoNovo);
+            cIni.WriteString(this.Atual, "CaminhoAtual", CaminhoSubtarefasAtual(caminhoAtualCompleto));
+            _caminhoSubtarefas.Clear();
+            _caminhoSubtarefas.AddRange(caminhoAtualCompleto);
+            AtualizarEstadoCaminhoSubtarefas();
+            CarregarHierarquiaSubtarefas();
+            AbrirAnotacaoDaHierarquiaAtual(true);
+        }
+
+        private void ApagarSubatividade(List<string> caminhoAtual)
+        {
+            if (caminhoAtual.Count == 0)
+                return;
+
+            string nome = caminhoAtual[caminhoAtual.Count - 1];
+            DialogResult resposta = MessageBox.Show(
+                this,
+                "Tem certeza que deseja excluir a sub-tarefa '" + nome + "' e todo o conteúdo abaixo dela?",
+                this.TitAplicativo,
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning);
+            if (resposta != DialogResult.Yes)
+                return;
+
+            List<string> caminhoPai = caminhoAtual.Take(caminhoAtual.Count - 1).ToList();
+            string pasta = PastaDaSubtarefa(caminhoAtual);
+            Directory.Delete(pasta, true);
+
+            _caminhoSubtarefas.Clear();
+            _caminhoSubtarefas.AddRange(caminhoPai);
+            cIni.WriteString(this.Atual, "CaminhoAtual", CaminhoSubtarefasAtual());
+            CarregarHierarquiaSubtarefas();
+            AbrirAnotacaoDaHierarquiaAtual(false);
+        }
+
+        private void AbrirAnotacaoDaHierarquiaAtual(bool nova)
+        {
+            this.timer1.Enabled = false;
+            string data = Fun.Agora().ToString("dd-MM-yyyy");
+
+            if (nova)
+            {
+                string arquivoNovo = NomeDoArquivo(data, true);
+                string pasta = Path.GetDirectoryName(arquivoNovo);
+                if (!Directory.Exists(pasta))
+                    Directory.CreateDirectory(pasta);
+                if (!File.Exists(arquivoNovo))
+                    File.WriteAllText(arquivoNovo, "", Encoding.UTF8);
+
+                this.Filename = arquivoNovo;
+                DefinirTextoEditorProgramaticamente("");
+                this.IsDirty = false;
+                ResetUndoDaAtividadeAtual();
+                controlContentTextBox.BackColor = SystemColors.Window;
+            }
+            else
+            {
+                this.Filename = NomeDoArquivo(data);
+                this.Open(this.Filename);
+            }
+
+            this.Text = this.TitAplicativo + " " + Path.GetFileName(this.Filename);
+            this.PreencheComboArquivo(PastaDaSubtarefaAtual());
+            this.cbArquivosOld = this.cbArquivos.Text;
         }
 
         private bool TemArqHoje(string Pasta, ref string DtHoje)
@@ -2329,6 +3020,7 @@ namespace Anoteitor
             this.Loga("[v2.2] CarregaArquivoDoProjeto");
             this.HojeVazio = false;
             controlContentTextBox.Clear();
+            CarregarCaminhoSubtarefasPersistido();
             string Data = Fun.Agora().ToShortDateString().Replace(@"/", "-");
             this.Filename = NomeDoArquivo(Data);
             this.Loga("Abrindo arquivo: " + this.Filename);
@@ -2475,10 +3167,8 @@ namespace Anoteitor
 
         private void AplicarSelecaoSubprojeto(string subprojeto)
         {
-            string subprojetoTexto = string.IsNullOrWhiteSpace(subprojeto) ? "GERAL" : subprojeto;
-            string subprojetoAtual = string.IsNullOrWhiteSpace(this.SUbAtual) ? "GERAL" : this.SUbAtual;
-
-            if (subprojetoTexto == subprojetoAtual)
+            string caminhoDestino = NormalizarSubprojeto(subprojeto);
+            if (string.Equals(CaminhoSubtarefasAtual(), caminhoDestino, StringComparison.OrdinalIgnoreCase))
                 return;
 
             if (this.Carregado && this.IsDirty)
@@ -2487,25 +3177,10 @@ namespace Anoteitor
                 this.Save();
             }
 
-            string sData = Fun.Agora().ToShortDateString();
-            string data = sData.Replace(@"/", "-");
-            this.SUbAtual = subprojetoTexto;
-            this.cbSubprojeto.Text = subprojetoTexto;
-            cIni.WriteString(this.Atual, "SubAtual", this.SUbAtual);
-
-            this.timer1.Enabled = false;
-            this.Filename = NomeDoArquivo(data);
-            this.Loga("Abrindo novo arquivo: " + this.Filename);
-            this.Open(this.Filename);
-            this.cbArquivosSUbOld = this.SUbAtual;
-
-            renomearToolStripMenuItem.Enabled = (this.SUbAtual != "" && this.SUbAtual != "GERAL");
-            apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
-
-            string pastaSub = this.PastaGeral + @"\" + this.Atual +
-                             (string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL" ? "" : @"\" + this.SUbAtual);
-
-            this.PreencheComboArquivo(pastaSub);
+            cIni.WriteString(this.Atual, "CaminhoAtual", caminhoDestino);
+            CarregarHierarquiaSubtarefas();
+            AbrirAnotacaoDaHierarquiaAtual(false);
+            this.cbArquivosSUbOld = CaminhoSubtarefasAtual();
         }
 
         private void AplicarSelecaoData(string dataSelecionada)
@@ -2539,7 +3214,7 @@ namespace Anoteitor
         private void MostraArquivosDoProjeto()
         {
             int QtdSub = this.cIni.ReadInt(this.Atual, "QtdSub", 0);
-            if (QtdSub > 0)
+            if (QtdSub > 0 || TemSubpastas(PastaDoProjetoAtual()))
             {
                 this.MotraArqSub(QtdSub);
             }
@@ -2550,13 +3225,13 @@ namespace Anoteitor
                 this.cbSubprojeto.Visible = false;
                 this.cbSubprojeto.Items.Clear();
                 this.cbSubprojeto.Text = "";
+                RemoverCombosSubtarefasDepoisDoNivel(0);
+                _caminhoSubtarefas.Clear();
                 renomearToolStripMenuItem.Enabled = false;
+                AtualizarMenuSubAtividades();
             }
             apagarToolStripMenuItem.Enabled = renomearToolStripMenuItem.Enabled;
-            string pastaAtual = this.PastaGeral + @"\" + this.Atual;
-            if (!string.IsNullOrWhiteSpace(this.SUbAtual) && this.SUbAtual != "GERAL")
-                pastaAtual += @"\" + this.SUbAtual;
-            this.PreencheComboArquivo(pastaAtual);
+            this.PreencheComboArquivo(PastaDaSubtarefaAtual());
             this.cbArquivosOld = this.cbArquivos.Text;
         }
 
@@ -2615,12 +3290,7 @@ namespace Anoteitor
                     this.Loga("Pasta criada: " + Pasta);
                 }
 
-                string prefixoHistorico;
-
-                if (string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL")
-                    prefixoHistorico = this.Atual + "^";
-                else
-                    prefixoHistorico = this.Atual + "^" + this.SUbAtual + "^";
+                string prefixoHistorico = NomeBaseAnotacaoAtual() + "^";
 
                 FileInfo[] arquivos = info.GetFiles("*.txt")
                     .OrderBy(p => p.CreationTime)
@@ -2721,24 +3391,10 @@ namespace Anoteitor
 
         private string NomeDoArquivo(string Data, bool forcarDataEspecifica = false)
         {
-            string nmSUb = "";
-            string dirSub = "";
-            this._SUbAtual = cIni.ReadString(this.Atual, "SubAtual", "");
-            if (this._SUbAtual.Length > 0)
-            {
-                if (this._SUbAtual != "GERAL")
-                {
-                    nmSUb = this._SUbAtual + "^";
-                    dirSub = @"\" + this._SUbAtual;
-                }
-            }
-            string Pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
-
-            string nomeWorkingCopy = string.IsNullOrEmpty(nmSUb)
-                ? this.Atual
-                : this.Atual + "^" + nmSUb.TrimEnd('^');
-            string workingCopy = Pasta + @"\" + nomeWorkingCopy + ".txt";
-            string workingCopyAntigo = Pasta + @"\" + this.Atual + "^" + nmSUb + "current.txt";
+            string Pasta = PastaDaSubtarefaAtual();
+            string nomeBase = NomeBaseAnotacaoAtual();
+            string workingCopy = Path.Combine(Pasta, nomeBase + ".txt");
+            string workingCopyAntigo = Path.Combine(Pasta, nomeBase + "^current.txt");
 
             if (string.Equals(Data, "current", StringComparison.OrdinalIgnoreCase))
             {
@@ -2750,7 +3406,7 @@ namespace Anoteitor
             if (forcarDataEspecifica)
             {
                 string sDataX = Data.Replace(@"/", "-");
-                string arquivoData = Pasta + @"\" + this.Atual + "^" + nmSUb + sDataX + ".txt";
+                string arquivoData = Path.Combine(Pasta, nomeBase + "^" + sDataX + ".txt");
                 this.Loga($"Forçando abertura do arquivo da data {Data}: {arquivoData}");
                 return arquivoData;
             }
@@ -2772,7 +3428,7 @@ namespace Anoteitor
 
             // ✅ PRIORIDADE 3: Arquivo do dia atual (ex: Empregos^Cristian^17-03-2026.txt)
             string sData = Data.Replace(@"/", "-");
-            string todayFile = Pasta + @"\" + this.Atual + "^" + nmSUb + sData + ".txt";
+            string todayFile = Path.Combine(Pasta, nomeBase + "^" + sData + ".txt");
 
             this.Loga("Working copy não encontrado, usando arquivo do dia: " + todayFile);
             return todayFile;
@@ -2887,19 +3543,10 @@ namespace Anoteitor
             string dataSelecionadaStr = cbArquivos.Text.Replace("/", "-").Replace(".", "-");
             string hojeStr = Fun.Agora().ToString("dd-MM-yyyy");
 
-            string nmSUb = string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL"
-                ? "" : this.SUbAtual + "^";
-
-            string dirSub = string.IsNullOrEmpty(this.SUbAtual) || this.SUbAtual == "GERAL"
-                ? "" : @"\" + this.SUbAtual;
-
-            string pasta = this.PastaGeral + @"\" + this.Atual + dirSub;
-
-            string arquivoDataSelecionada =
-                pasta + @"\" + this.Atual + "^" + nmSUb + dataSelecionadaStr + ".txt";
-
-            string workingCopy =
-                pasta + @"\" + this.Atual + "^" + nmSUb.TrimEnd('^') + ".txt";
+            string pasta = PastaDaSubtarefaAtual();
+            string nomeBase = NomeBaseAnotacaoAtual();
+            string arquivoDataSelecionada = Path.Combine(pasta, nomeBase + "^" + dataSelecionadaStr + ".txt");
+            string workingCopy = Path.Combine(pasta, nomeBase + ".txt");
 
             this.Loga($"🔍 Tentando abrir arquivo EXATO da data {dataSelecionadaStr}: {arquivoDataSelecionada}");
 
@@ -2940,7 +3587,7 @@ namespace Anoteitor
                 return;
             }
 
-            string prefixoHistorico = this.Atual + "^" + nmSUb;
+            string prefixoHistorico = nomeBase + "^";
 
             this.Loga($"🔎 Buscando histórico anterior mais próximo de {cbArquivos.Text}");
 
@@ -3186,41 +3833,70 @@ namespace Anoteitor
         private void cbSubprojeto_SelectedIndexChanged(object sender, EventArgs e)
         {
             this.Loga("[v2.2] cbSubprojeto_SelectedIndexChanged");
-            this.Loga("Carregado=" + this.Carregado + ", Text=" + cbSubprojeto.Text + ", Old=" + this.cbArquivosSUbOld);
-
-            if (!cbSubprojeto.Visible || cbSubprojeto.Items.Count == 0)
+            if (_atualizandoCombosSubtarefas)
                 return;
 
-            if (cbSubprojeto.Text == this.cbArquivosSUbOld)
+            ToolStripComboBox combo = sender as ToolStripComboBox;
+            if (combo == null)
+                combo = cbSubprojeto;
+
+            int nivel = _combosSubtarefas.IndexOf(combo);
+            if (nivel < 0 || combo.Items.Count == 0)
                 return;
 
-            AplicarSelecaoSubprojeto(cbSubprojeto.Text);
+            this.Loga("Carregado=" + this.Carregado + ", Nivel=" + nivel + ", Text=" + combo.Text);
+
+            if (this.Carregado && this.IsDirty)
+                this.Save();
+
+            _nivelHierarquiaSelecionado = combo.Tag is int nivelSelecionado ? nivelSelecionado : -1;
+            _atualizandoCombosSubtarefas = true;
+            try
+            {
+                while (_caminhoSubtarefas.Count > nivel)
+                    _caminhoSubtarefas.RemoveAt(_caminhoSubtarefas.Count - 1);
+
+                if (!string.IsNullOrWhiteSpace(combo.Text) && combo.Text != "GERAL")
+                    _caminhoSubtarefas.Add(combo.Text);
+
+                RemoverCombosSubtarefasDepoisDoNivel(nivel);
+
+                string pastaAtual = PastaDaSubtarefaAtual();
+                if (combo.Text != "GERAL" && TemSubpastas(pastaAtual))
+                {
+                    ToolStripComboBox proximo = CriarComboSubtarefaDinamico();
+                    PopularComboSubtarefa(proximo, pastaAtual, false);
+                    proximo.SelectedIndex = proximo.FindStringExact("GERAL");
+                }
+
+                AtualizarEstadoCaminhoSubtarefas();
+            }
+            finally
+            {
+                _atualizandoCombosSubtarefas = false;
+            }
+
+            AbrirAnotacaoDaHierarquiaAtual(false);
             RegistrarNavegacaoAtual();
         }
 
         private void renomearToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            SubAtividade cSubAtiv = new SubAtividade(Atual);
-            cSubAtiv.SetNomeSubAtividade(cbSubprojeto.Text);
-            cSubAtiv.ShowDialog();
-            if (cSubAtiv.DialogResult == DialogResult.OK)
+            RenomearSubatividadePorNivel(_caminhoSubtarefas.Count - 1);
+        }
+
+        private void RenomearArquivosDaHierarquia(string pasta, string prefixoAntigo, string prefixoNovo)
+        {
+            foreach (string arquivo in Directory.GetFiles(pasta, "*.txt", SearchOption.AllDirectories))
             {
-                string Nome = cSubAtiv.Nome();
-                if (Nome.Length > 0)
-                {
-                    this.Cursor = Cursors.WaitCursor;
-                    string sData = Fun.Agora().ToShortDateString();
-                    string Data = sData.Replace(@"/", "-");
-                    this.NomeArq = this.Atual + "^" + Nome + "^" + Data + ".txt";
-                    this.Text = this.NomeArq + " - " + this.TitAplicativo;
-                    toolStripStatusLabel1.Text = this.NomeArq;
-                    this.SUbAtual = Nome;
-                    cIni.WriteString(this.Atual, "SubAtual", this.SUbAtual);
-                    int QtdSub = this.cIni.ReadInt(this.Atual, "QtdSub", 0);
-                    this.MotraArqSub(QtdSub);
-                    controlContentTextBox.BackColor = SystemColors.Window;
-                    this.Cursor = Cursors.Default;
-                }
+                string nome = Path.GetFileName(arquivo);
+                if (!nome.StartsWith(prefixoAntigo, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string nomeNovo = prefixoNovo + nome.Substring(prefixoAntigo.Length);
+                string destino = Path.Combine(Path.GetDirectoryName(arquivo), nomeNovo);
+                if (!File.Exists(destino))
+                    File.Move(arquivo, destino);
             }
         }
 

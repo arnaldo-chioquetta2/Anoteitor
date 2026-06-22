@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Windows.Forms;
 using System.IO.Compression;
 using System.IO;
@@ -62,46 +63,56 @@ namespace Anoteitor
 
         private void ApagaTarefa()
         {
+            if (!Directory.Exists(PastaAtual))
+                return;
+
             DirectoryInfo info = new DirectoryInfo(PastaAtual);
-            DirectoryInfo[] Dirs = info.GetDirectories();
-            int Cont = 0;
-            foreach (DirectoryInfo Dir in Dirs)
+            FileInfo[] arquivos = info.GetFiles("*", SearchOption.AllDirectories);
+            DirectoryInfo[] diretorios = info.GetDirectories("*", SearchOption.AllDirectories)
+                .OrderByDescending(d => d.FullName.Length)
+                .ToArray();
+
+            int Max = arquivos.Length + diretorios.Length + 1;
+            progressBar1.Maximum = Math.Max(Max, 1);
+            progressBar1.Value = 0;
+
+            foreach (FileInfo Arq in arquivos)
             {
-                Cont++;
-                Cont += Dir.GetFiles().Length;
-            }
-            int Max = Cont + 1;
-            progressBar1.Maximum = Max;
-            Cont = 0;
-            // DELEÇÃO
-            foreach (FileInfo Arq in info.GetFiles())
-            {
-                File.Delete(Arq.FullName);
-                Cont++;
-                if (Cont < Max)
+                try
                 {
-                    progressBar1.Value = Cont;
+                    Arq.Attributes = FileAttributes.Normal;
+                    Arq.Delete();
                 }
-            }
-            foreach (DirectoryInfo Dir in Dirs)
-            {                
-                if (Dir.GetFiles().Length>0)
+                catch (Exception)
                 {
-                    foreach (FileInfo Arq in Dir.GetFiles())
-                    {
-                        File.Delete(Arq.FullName);
-                        Cont++;
-                        if (Cont< Max)
-                        {
-                            progressBar1.Value = Cont;
-                        }
-                    }
+                    // Mantém o comportamento atual em caso de arquivo travado ou protegido.
+                }
+
+                if (progressBar1.Value < progressBar1.Maximum)
+                    progressBar1.Value++;
+            }
+
+            foreach (DirectoryInfo Dir in diretorios)
+            {
+                try
+                {
+                    Dir.Attributes = FileAttributes.Normal;
                     Dir.Delete();
                 }
+                catch (Exception)
+                {
+                    // Mantém o comportamento atual em caso de pasta já removida ou travada.
+                }
+
+                if (progressBar1.Value < progressBar1.Maximum)
+                    progressBar1.Value++;
             }
+
             try
             {
                 info.Delete();
+                if (progressBar1.Value < progressBar1.Maximum)
+                    progressBar1.Value++;
             }
             catch (Exception)
             {

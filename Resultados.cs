@@ -8,7 +8,7 @@ namespace Anoteitor {
     public partial class Resultados : Form {
 
         private readonly Main _Main;
-        private readonly Dictionary<string, string> fileMapping; // Mapeia a data para o caminho do arquivo
+        private readonly List<string> _resultFiles;
         private readonly CancellationTokenSource _cts;
 
         public Resultados(Main main, List<(string filePath, string displayText)> resultados, CancellationTokenSource cts)
@@ -16,16 +16,13 @@ namespace Anoteitor {
             InitializeComponent();
             _Main = main;
             _cts = cts;
-            fileMapping = new Dictionary<string, string>();
+            _resultFiles = new List<string>();
 
             foreach (var (filePath, displayText) in resultados)
             {
                 string fileName = Path.GetFileName(filePath);
                 string datePart = Helper.ExtractDateFromFileName(fileName);
-
-                if (!fileMapping.ContainsKey(datePart))
-                    fileMapping[datePart] = filePath;
-
+                _resultFiles.Add(filePath);
                 listBox1.Items.Add($"{datePart} ➝ {displayText}");
             }
 
@@ -56,30 +53,26 @@ namespace Anoteitor {
         }
         private bool OpenSelectedFile(bool ativar=false)
         {
-            if (listBox1.SelectedItem != null)
-            {
-                string selectedText = listBox1.SelectedItem.ToString();
-                string datePart = selectedText.Split('➝')[0].Trim();
-                string searchText = selectedText.Split('➝')[1].Trim();
+            int index = listBox1.SelectedIndex;
+            if (index < 0 || index >= _resultFiles.Count)
+                return false;
 
-                if (fileMapping.ContainsKey(datePart))
-                {
-                    string filePath = fileMapping[datePart];
-                    _Main.Open(filePath, searchText, ativar: ativar);
-                    return true; // Indica que o arquivo foi aberto
-                }
-            }
-            return false; // Indica que não foi possível abrir
+            string selectedText = listBox1.SelectedItem?.ToString() ?? "";
+            int separatorIndex = selectedText.IndexOf('➝');
+            string searchText = separatorIndex >= 0
+                ? selectedText.Substring(separatorIndex + 1).Trim()
+                : selectedText;
+            string filePath = _resultFiles[index];
+
+            _Main.Open(filePath, searchText, ativar: ativar);
+            return true; // Indica que o arquivo foi aberto
         }
 
         public void AdicionarResultado(string filePath, string displayText)
         {
             string fileName = Path.GetFileName(filePath);
             string datePart = Helper.ExtractDateFromFileName(fileName);
-
-            if (!fileMapping.ContainsKey(datePart))
-                fileMapping[datePart] = filePath;
-
+            _resultFiles.Add(filePath);
             listBox1.Items.Add($"{datePart} ➝ {displayText}");
 
             // Mantém o último item visível

@@ -12,11 +12,13 @@ namespace Anoteitor
         private int QtdSub = 0;        
         private int NrSub = 0;
         private INI cIni;
+        private readonly bool SomenteNome;
 
-        public SubAtividade(string Ativ)
+        public SubAtividade(string Ativ, bool somenteNome = false)
         {
             InitializeComponent();
             this.Atividade = Ativ;
+            this.SomenteNome = somenteNome;
             this.lbAtividade.Text = "Atividade: " + Ativ;
             this.NomeSubAtividadeAnt = "";
             txSub.Text = "";
@@ -30,7 +32,17 @@ namespace Anoteitor
 
         private void Grava()
         {
-            this.NomeSubAtividade = txSub.Text;            
+            this.NomeSubAtividade = txSub.Text.Trim();
+            if (this.NomeSubAtividade.Length == 0)
+                return;
+
+            if (this.SomenteNome)
+            {
+                this.DialogResult = DialogResult.OK;
+                Close();
+                return;
+            }
+
             Funcoes Fun = new Funcoes();
 #if DEBUG            
             this.cIni = new INI(Fun.Caminho());

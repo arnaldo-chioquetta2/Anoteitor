@@ -45,9 +45,9 @@ namespace Anoteitor
             this.menuitemFilePrint = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
             this.toolStripMenuItem2 = new System.Windows.Forms.ToolStripMenuItem();
+            this.menuitemExecutarAtualizacao = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator7 = new System.Windows.Forms.ToolStripSeparator();
             this.menuitemFileExit = new System.Windows.Forms.ToolStripMenuItem();
-            this.menuitemExecutarAtualizacao = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemEdit = new System.Windows.Forms.ToolStripMenuItem();
             this.menuitemEditUndo = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
@@ -171,7 +171,7 @@ namespace Anoteitor
             // 
             this.menuitemFileNew.Name = "menuitemFileNew";
             this.menuitemFileNew.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.N)));
-            this.menuitemFileNew.Size = new System.Drawing.Size(178, 22);
+            this.menuitemFileNew.Size = new System.Drawing.Size(190, 22);
             this.menuitemFileNew.Text = "&Novo";
             this.menuitemFileNew.Click += new System.EventHandler(this.menuitemFileNew_Click);
             // 
@@ -179,7 +179,7 @@ namespace Anoteitor
             // 
             this.menuitemFileOpen.Name = "menuitemFileOpen";
             this.menuitemFileOpen.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.O)));
-            this.menuitemFileOpen.Size = new System.Drawing.Size(178, 22);
+            this.menuitemFileOpen.Size = new System.Drawing.Size(190, 22);
             this.menuitemFileOpen.Text = "&Abrir...";
             this.menuitemFileOpen.Click += new System.EventHandler(this.menuitemFileOpen_Click);
             // 
@@ -187,33 +187,33 @@ namespace Anoteitor
             // 
             this.menuitemFileSave.Name = "menuitemFileSave";
             this.menuitemFileSave.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.S)));
-            this.menuitemFileSave.Size = new System.Drawing.Size(178, 22);
+            this.menuitemFileSave.Size = new System.Drawing.Size(190, 22);
             this.menuitemFileSave.Text = "&Salvar";
             this.menuitemFileSave.Click += new System.EventHandler(this.menuitemFileSave_Click);
             // 
             // menuitemFileSaveAs
             // 
             this.menuitemFileSaveAs.Name = "menuitemFileSaveAs";
-            this.menuitemFileSaveAs.Size = new System.Drawing.Size(178, 22);
+            this.menuitemFileSaveAs.Size = new System.Drawing.Size(190, 22);
             this.menuitemFileSaveAs.Text = "Salvar &Como...";
             this.menuitemFileSaveAs.Click += new System.EventHandler(this.menuitemFileSaveAs_Click);
             // 
             // toolStripSeparator1
             // 
             this.toolStripSeparator1.Name = "toolStripSeparator1";
-            this.toolStripSeparator1.Size = new System.Drawing.Size(175, 6);
+            this.toolStripSeparator1.Size = new System.Drawing.Size(187, 6);
             // 
             // menuitemFilePageSetup
             // 
             this.menuitemFilePageSetup.Name = "menuitemFilePageSetup";
-            this.menuitemFilePageSetup.Size = new System.Drawing.Size(178, 22);
+            this.menuitemFilePageSetup.Size = new System.Drawing.Size(190, 22);
             this.menuitemFilePageSetup.Text = "Page Set&up...";
             this.menuitemFilePageSetup.Click += new System.EventHandler(this.menuitemFilePageSetup_Click);
             // 
             // menuitemFileHeaderAndFooter
             // 
             this.menuitemFileHeaderAndFooter.Name = "menuitemFileHeaderAndFooter";
-            this.menuitemFileHeaderAndFooter.Size = new System.Drawing.Size(178, 22);
+            this.menuitemFileHeaderAndFooter.Size = new System.Drawing.Size(190, 22);
             this.menuitemFileHeaderAndFooter.Text = "&Header && Footer...";
             this.menuitemFileHeaderAndFooter.Click += new System.EventHandler(this.menuitemFileHeaderAndFooter_Click);
             // 
@@ -221,40 +221,40 @@ namespace Anoteitor
             // 
             this.menuitemFilePrint.Name = "menuitemFilePrint";
             this.menuitemFilePrint.ShortcutKeys = ((System.Windows.Forms.Keys)((System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.P)));
-            this.menuitemFilePrint.Size = new System.Drawing.Size(178, 22);
+            this.menuitemFilePrint.Size = new System.Drawing.Size(190, 22);
             this.menuitemFilePrint.Text = "&Impressão...";
             this.menuitemFilePrint.Click += new System.EventHandler(this.menuitemFilePrint_Click);
             // 
             // toolStripSeparator2
             // 
             this.toolStripSeparator2.Name = "toolStripSeparator2";
-            this.toolStripSeparator2.Size = new System.Drawing.Size(175, 6);
+            this.toolStripSeparator2.Size = new System.Drawing.Size(187, 6);
             // 
             // toolStripMenuItem2
             // 
             this.toolStripMenuItem2.Name = "toolStripMenuItem2";
-            this.toolStripMenuItem2.Size = new System.Drawing.Size(178, 22);
+            this.toolStripMenuItem2.Size = new System.Drawing.Size(190, 22);
             this.toolStripMenuItem2.Text = "Log";
             this.toolStripMenuItem2.Click += new System.EventHandler(this.toolStripMenuItem2_Click);
-            // 
-            // menuitemFileExit
-            // 
-            this.menuitemFileExit.Name = "menuitemFileExit";
-            this.menuitemFileExit.Size = new System.Drawing.Size(178, 22);
-            this.menuitemFileExit.Text = "Sai&r";
-            this.menuitemFileExit.Click += new System.EventHandler(this.menuitemFileExit_Click);
             // 
             // menuitemExecutarAtualizacao
             // 
             this.menuitemExecutarAtualizacao.Name = "menuitemExecutarAtualizacao";
-            this.menuitemExecutarAtualizacao.Size = new System.Drawing.Size(197, 22);
+            this.menuitemExecutarAtualizacao.Size = new System.Drawing.Size(190, 22);
             this.menuitemExecutarAtualizacao.Text = "Executar atualização...";
             this.menuitemExecutarAtualizacao.Click += new System.EventHandler(this.menuitemExecutarAtualizacao_Click);
             // 
             // toolStripSeparator7
             // 
             this.toolStripSeparator7.Name = "toolStripSeparator7";
-            this.toolStripSeparator7.Size = new System.Drawing.Size(194, 6);
+            this.toolStripSeparator7.Size = new System.Drawing.Size(187, 6);
+            // 
+            // menuitemFileExit
+            // 
+            this.menuitemFileExit.Name = "menuitemFileExit";
+            this.menuitemFileExit.Size = new System.Drawing.Size(190, 22);
+            this.menuitemFileExit.Text = "Sai&r";
+            this.menuitemFileExit.Click += new System.EventHandler(this.menuitemFileExit_Click);
             // 
             // menuitemEdit
             // 
@@ -433,20 +433,20 @@ namespace Anoteitor
             this.menuitemFormatCombosMaior,
             this.menuitemFormatCombosMenor});
             this.menuitemFormatCombos.Name = "menuitemFormatCombos";
-            this.menuitemFormatCombos.Size = new System.Drawing.Size(180, 22);
+            this.menuitemFormatCombos.Size = new System.Drawing.Size(134, 22);
             this.menuitemFormatCombos.Text = "Combos";
             // 
             // menuitemFormatCombosMaior
             // 
             this.menuitemFormatCombosMaior.Name = "menuitemFormatCombosMaior";
-            this.menuitemFormatCombosMaior.Size = new System.Drawing.Size(112, 22);
+            this.menuitemFormatCombosMaior.Size = new System.Drawing.Size(109, 22);
             this.menuitemFormatCombosMaior.Text = "Maior";
             this.menuitemFormatCombosMaior.Click += new System.EventHandler(this.menuitemFormatCombosMaior_Click);
             // 
             // menuitemFormatCombosMenor
             // 
             this.menuitemFormatCombosMenor.Name = "menuitemFormatCombosMenor";
-            this.menuitemFormatCombosMenor.Size = new System.Drawing.Size(112, 22);
+            this.menuitemFormatCombosMenor.Size = new System.Drawing.Size(109, 22);
             this.menuitemFormatCombosMenor.Text = "Menor";
             this.menuitemFormatCombosMenor.Click += new System.EventHandler(this.menuitemFormatCombosMenor_Click);
             // 
