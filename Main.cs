@@ -68,6 +68,7 @@ namespace Anoteitor
         private int _nivelContextoHierarquia = -1;
         private ToolStripMenuItem _itemContextoRenomear;
         private ToolStripMenuItem _itemContextoApagar;
+        private ToolStripMenuItem _itemContextoMover;
         private ToolStripMenuItem _itemContextoNova;
         private ToolStripMenuItem _itemContextoCriarSubTarefa;
         private ToolStripSeparator _separadorContextoHierarquia;
@@ -152,6 +153,20 @@ namespace Anoteitor
         public Main()
         {
             InitializeComponent();
+            try
+            {
+                string caminhoIcone = System.IO.Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "icon.ico");
+
+                if (System.IO.File.Exists(caminhoIcone))
+                    this.Icon = new System.Drawing.Icon(caminhoIcone);
+            }
+            catch
+            {
+                // O icone nao deve impedir a abertura do programa.
+            }
+
             projetoToolStripMenuItem.Visible = false;
             _combosSubtarefas.Add(cbSubprojeto);
             cbSubprojeto.Overflow = ToolStripItemOverflow.AsNeeded;
@@ -2315,17 +2330,20 @@ namespace Anoteitor
             _itemContextoNova = new ToolStripMenuItem("Nova");
             _itemContextoRenomear = new ToolStripMenuItem("Renomear");
             _itemContextoApagar = new ToolStripMenuItem("Apagar");
+            _itemContextoMover = new ToolStripMenuItem("Mover");
             _itemContextoCriarSubTarefa = new ToolStripMenuItem("Criar Sub Tarefa");
             _separadorContextoHierarquia = new ToolStripSeparator();
 
             _itemContextoNova.Click += (s, e) => NovaHierarquiaContexto();
             _itemContextoRenomear.Click += (s, e) => RenomearHierarquiaContexto();
             _itemContextoApagar.Click += (s, e) => ApagarHierarquiaContexto();
+            _itemContextoMover.Click += (s, e) => MoverHierarquiaContexto();
             _itemContextoCriarSubTarefa.Click += (s, e) => CriarSubTarefaHierarquiaContexto();
 
             _menuContextoHierarquia.Items.Add(_itemContextoNova);
             _menuContextoHierarquia.Items.Add(_itemContextoRenomear);
             _menuContextoHierarquia.Items.Add(_itemContextoApagar);
+            _menuContextoHierarquia.Items.Add(_itemContextoMover);
             _menuContextoHierarquia.Items.Add(new ToolStripSeparator());
             _menuContextoHierarquia.Items.Add(_itemContextoCriarSubTarefa);
         }
@@ -2335,6 +2353,7 @@ namespace Anoteitor
             _itemContextoNova.Visible = true;
             _itemContextoRenomear.Visible = true;
             _itemContextoApagar.Visible = true;
+            _itemContextoMover.Visible = true;
             _itemContextoCriarSubTarefa.Visible = true;
         }
 
@@ -2429,6 +2448,166 @@ namespace Anoteitor
             }
 
             CriarSubtarefaAbaixoDoCaminho(caminhoPai);
+        }
+
+        private void MoverHierarquiaContexto()
+        {
+            if (_nivelContextoHierarquia < 0)
+            {
+                MessageBox.Show(
+                    "Movimentação de projeto principal será implementada depois.",
+                    "Mover",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_caminhoSubtarefas == null || _caminhoSubtarefas.Count == 0)
+                return;
+
+            if (_nivelContextoHierarquia >= _caminhoSubtarefas.Count)
+                return;
+
+            List<string> caminhoOrigem = _caminhoSubtarefas
+                .Take(_nivelContextoHierarquia + 1)
+                .ToList();
+
+            string projetoOrigem = this.Atual;
+            string pastaProjetoOrigem = PastaDoProjetoAtual();
+
+            using (var frm = new MoverHierarquia(this.PastaGeral, projetoOrigem, caminhoOrigem, pastaProjetoOrigem))
+            {
+                if (frm.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                string projetoDestino = frm.ProjetoDestinoSelecionado;
+                string pastaProjetoDestino = frm.PastaProjetoDestinoSelecionada;
+                List<string> caminhoDestino = frm.CaminhoDestinoSelecionado ?? new List<string>();
+
+                if (string.IsNullOrWhiteSpace(projetoDestino) || string.IsNullOrWhiteSpace(pastaProjetoDestino))
+                    return;
+
+                if (string.Equals(projetoOrigem, projetoDestino, StringComparison.OrdinalIgnoreCase)
+                    && DestinoEhDentroDaOrigem(caminhoOrigem, caminhoDestino))
+                {
+                    MessageBox.Show(
+                        "Não é possível mover uma subtarefa para dentro dela mesma ou de uma subtarefa filha.",
+                        "Mover",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                MoverSubatividade(
+                    caminhoOrigem,
+                    pastaProjetoOrigem,
+                    projetoOrigem,
+                    caminhoDestino,
+                    pastaProjetoDestino,
+                    projetoDestino);
+            }
+        }
+
+        private bool DestinoEhDentroDaOrigem(List<string> origem, List<string> destino)
+        {
+            if (origem == null || destino == null)
+                return false;
+
+            if (destino.Count < origem.Count)
+                return false;
+
+            for (int i = 0; i < origem.Count; i++)
+            {
+                if (!string.Equals(origem[i], destino[i], StringComparison.OrdinalIgnoreCase))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private void MoverSubatividade(
+            List<string> caminhoOrigem,
+            string pastaProjetoOrigem,
+            string projetoOrigem,
+            List<string> caminhoDestinoPai,
+            string pastaProjetoDestino,
+            string projetoDestino)
+        {
+            string nomeMovido = caminhoOrigem[caminhoOrigem.Count - 1];
+            string pastaOrigem = PastaDaSubtarefa(pastaProjetoOrigem, caminhoOrigem);
+
+            List<string> caminhoNovo = new List<string>(caminhoDestinoPai);
+            caminhoNovo.Add(nomeMovido);
+
+            string pastaDestino = PastaDaSubtarefa(pastaProjetoDestino, caminhoNovo);
+
+            if (!Directory.Exists(pastaOrigem))
+            {
+                MessageBox.Show(
+                    "A pasta de origem não foi encontrada:\n\n" + pastaOrigem,
+                    "Mover",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (Directory.Exists(pastaDestino))
+            {
+                MessageBox.Show(
+                    "Já existe uma subtarefa com esse nome no destino.",
+                    "Mover",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            Directory.Move(pastaOrigem, pastaDestino);
+            RenomearArquivosDaSubarvoreMovida(
+                projetoOrigem,
+                caminhoOrigem,
+                projetoDestino,
+                caminhoNovo,
+                pastaDestino);
+
+            if (!string.Equals(this.Atual, projetoDestino, StringComparison.OrdinalIgnoreCase))
+                AplicarSelecaoProjeto(projetoDestino);
+
+            _caminhoSubtarefas.Clear();
+            _caminhoSubtarefas.AddRange(caminhoNovo);
+
+            cIni.WriteString(this.Atual, "CaminhoAtual", CaminhoSubtarefasAtual());
+
+            AtualizarEstadoCaminhoSubtarefas();
+            CarregarHierarquiaSubtarefas();
+            AbrirAnotacaoDaHierarquiaAtual(true);
+            AtualizarMenuSubAtividades();
+        }
+
+        private void RenomearArquivosDaSubarvoreMovida(
+            string projetoOrigem,
+            List<string> caminhoAntigoRaiz,
+            string projetoDestino,
+            List<string> caminhoNovoRaiz,
+            string pastaNovaRaiz)
+        {
+            string prefixoAntigo = NomeBaseAnotacao(projetoOrigem, caminhoAntigoRaiz);
+            string prefixoNovo = NomeBaseAnotacao(projetoDestino, caminhoNovoRaiz);
+
+            foreach (string arquivo in Directory.GetFiles(pastaNovaRaiz, "*.txt", SearchOption.AllDirectories))
+            {
+                string pasta = Path.GetDirectoryName(arquivo);
+                string nomeArquivo = Path.GetFileNameWithoutExtension(arquivo);
+                string extensao = Path.GetExtension(arquivo);
+
+                if (!nomeArquivo.StartsWith(prefixoAntigo, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string novoNomeArquivo = prefixoNovo + nomeArquivo.Substring(prefixoAntigo.Length) + extensao;
+                string novoCaminhoArquivo = Path.Combine(pasta, novoNomeArquivo);
+
+                if (!File.Exists(novoCaminhoArquivo))
+                    File.Move(arquivo, novoCaminhoArquivo);
+            }
         }
 
         private void RenomearHierarquiaContexto()
@@ -2763,9 +2942,20 @@ namespace Anoteitor
 
         private string PastaDaSubtarefa(IEnumerable<string> caminhoSubtarefas)
         {
-            string pasta = PastaDoProjetoAtual();
+            return PastaDaSubtarefa(PastaDoProjetoAtual(), caminhoSubtarefas);
+        }
+
+        private string PastaDaSubtarefa(string pastaProjeto, IEnumerable<string> caminhoSubtarefas)
+        {
+            string pasta = pastaProjeto;
             foreach (string parte in caminhoSubtarefas)
-                pasta = Path.Combine(pasta, parte);
+            {
+                if (!string.IsNullOrWhiteSpace(parte) &&
+                    !string.Equals(parte, "GERAL", StringComparison.OrdinalIgnoreCase))
+                {
+                    pasta = Path.Combine(pasta, parte);
+                }
+            }
             return pasta;
         }
 
@@ -2781,19 +2971,27 @@ namespace Anoteitor
 
         private string NomeBaseAnotacaoAtual()
         {
-            if (_caminhoSubtarefas.Count == 0)
-                return this.Atual;
-
-            return this.Atual + "^" + string.Join("^", _caminhoSubtarefas);
+            return NomeBaseAnotacao(this.Atual, _caminhoSubtarefas);
         }
 
         private string NomeBaseAnotacao(IEnumerable<string> caminhoSubtarefas)
         {
-            List<string> caminho = caminhoSubtarefas.ToList();
-            if (caminho.Count == 0)
-                return this.Atual;
+            return NomeBaseAnotacao(this.Atual, caminhoSubtarefas);
+        }
 
-            return this.Atual + "^" + string.Join("^", caminho);
+        private string NomeBaseAnotacao(string projeto, IEnumerable<string> caminhoSubtarefas)
+        {
+            List<string> partes = new List<string>();
+            partes.Add(projeto);
+
+            if (caminhoSubtarefas != null)
+            {
+                partes.AddRange(caminhoSubtarefas.Where(p =>
+                    !string.IsNullOrWhiteSpace(p) &&
+                    !string.Equals(p, "GERAL", StringComparison.OrdinalIgnoreCase)));
+            }
+
+            return string.Join("^", partes);
         }
 
         private void CarregarCaminhoSubtarefasPersistido()

@@ -31,7 +31,6 @@ namespace Anoteitor
         private void InitializeComponent()
         {
             this.components = new System.ComponentModel.Container();
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Main));
             this.controlContentTextBox = new System.Windows.Forms.TextBox();
             this.menubarMain = new System.Windows.Forms.MenuStrip();
             this.fileToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -679,7 +678,6 @@ namespace Anoteitor
             this.Controls.Add(this.controlStatusBar);
             this.Controls.Add(this.controlContentTextBox);
             this.Controls.Add(this.menubarMain);
-            this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
             this.MainMenuStrip = this.menubarMain;
             this.Name = "Main";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
