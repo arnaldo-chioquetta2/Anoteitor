@@ -72,6 +72,7 @@ namespace Anoteitor
         private ToolStripMenuItem _itemContextoNova;
         private ToolStripMenuItem _itemContextoCriarSubTarefa;
         private ToolStripSeparator _separadorContextoHierarquia;
+        private MoverHierarquia _janelaMoverHierarquia;
         private int _navigationHistoryIndex = -1;
         private bool _isApplyingNavigationHistory = false;
         private bool _suppressNavigationHistory = false;
@@ -2475,37 +2476,41 @@ namespace Anoteitor
             string projetoOrigem = this.Atual;
             string pastaProjetoOrigem = PastaDoProjetoAtual();
 
-            using (var frm = new MoverHierarquia(this.PastaGeral, projetoOrigem, caminhoOrigem, pastaProjetoOrigem))
+            if (_janelaMoverHierarquia == null || _janelaMoverHierarquia.IsDisposed)
+                _janelaMoverHierarquia = new MoverHierarquia(this.PastaGeral, projetoOrigem, caminhoOrigem, pastaProjetoOrigem);
+
+            _janelaMoverHierarquia.ConfigurarOrigemAtual(projetoOrigem, pastaProjetoOrigem, caminhoOrigem);
+            _janelaMoverHierarquia.AtualizarArvoreSeNecessario();
+            _janelaMoverHierarquia.DialogResult = DialogResult.None;
+
+            if (_janelaMoverHierarquia.ShowDialog(this) != DialogResult.OK)
+                return;
+
+            string projetoDestino = _janelaMoverHierarquia.ProjetoDestinoSelecionado;
+            string pastaProjetoDestino = _janelaMoverHierarquia.PastaProjetoDestinoSelecionada;
+            List<string> caminhoDestino = _janelaMoverHierarquia.CaminhoDestinoSelecionado ?? new List<string>();
+
+            if (string.IsNullOrWhiteSpace(projetoDestino) || string.IsNullOrWhiteSpace(pastaProjetoDestino))
+                return;
+
+            if (string.Equals(projetoOrigem, projetoDestino, StringComparison.OrdinalIgnoreCase)
+                && DestinoEhDentroDaOrigem(caminhoOrigem, caminhoDestino))
             {
-                if (frm.ShowDialog(this) != DialogResult.OK)
-                    return;
-
-                string projetoDestino = frm.ProjetoDestinoSelecionado;
-                string pastaProjetoDestino = frm.PastaProjetoDestinoSelecionada;
-                List<string> caminhoDestino = frm.CaminhoDestinoSelecionado ?? new List<string>();
-
-                if (string.IsNullOrWhiteSpace(projetoDestino) || string.IsNullOrWhiteSpace(pastaProjetoDestino))
-                    return;
-
-                if (string.Equals(projetoOrigem, projetoDestino, StringComparison.OrdinalIgnoreCase)
-                    && DestinoEhDentroDaOrigem(caminhoOrigem, caminhoDestino))
-                {
-                    MessageBox.Show(
-                        "Não é possível mover uma subtarefa para dentro dela mesma ou de uma subtarefa filha.",
-                        "Mover",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-
-                MoverSubatividade(
-                    caminhoOrigem,
-                    pastaProjetoOrigem,
-                    projetoOrigem,
-                    caminhoDestino,
-                    pastaProjetoDestino,
-                    projetoDestino);
+                MessageBox.Show(
+                    "Não é possível mover uma subtarefa para dentro dela mesma ou de uma subtarefa filha.",
+                    "Mover",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
             }
+
+            MoverSubatividade(
+                caminhoOrigem,
+                pastaProjetoOrigem,
+                projetoOrigem,
+                caminhoDestino,
+                pastaProjetoDestino,
+                projetoDestino);
         }
 
         private bool DestinoEhDentroDaOrigem(List<string> origem, List<string> destino)

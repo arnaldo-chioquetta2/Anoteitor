@@ -16,8 +16,10 @@ namespace Anoteitor
         }
 
         private readonly string _pastaRaizProjetos;
-        private readonly string _projetoOrigem;
-        private readonly List<string> _caminhoOrigem;
+        private string _projetoOrigem;
+        private string _pastaProjetoOrigem;
+        private List<string> _caminhoOrigem;
+        private string _ultimoCaminhoSelecionadoTree;
 
         public string ProjetoDestinoSelecionado { get; private set; }
         public string PastaProjetoDestinoSelecionada { get; private set; }
@@ -31,12 +33,26 @@ namespace Anoteitor
         {
             InitializeComponent();
             _pastaRaizProjetos = pastaRaizProjetos;
-            _projetoOrigem = projetoOrigem;
-            _caminhoOrigem = (caminhoOrigem ?? Enumerable.Empty<string>()).ToList();
-            ProjetoDestinoSelecionado = projetoOrigem;
-            PastaProjetoDestinoSelecionada = pastaProjetoOrigem;
+            ConfigurarOrigemAtual(projetoOrigem, pastaProjetoOrigem, caminhoOrigem);
             CaminhoDestinoSelecionado = null;
-            CarregarTree();
+            this.FormClosing += MoverHierarquia_FormClosing;
+            CarregarTreePreservandoEstado();
+        }
+
+        public void ConfigurarOrigemAtual(
+            string projetoOrigem,
+            string pastaProjetoOrigem,
+            IEnumerable<string> caminhoOrigem)
+        {
+            _projetoOrigem = projetoOrigem;
+            _pastaProjetoOrigem = pastaProjetoOrigem;
+            _caminhoOrigem = (caminhoOrigem ?? Enumerable.Empty<string>()).ToList();
+            LimparSelecaoDestino();
+        }
+
+        public void AtualizarArvoreSeNecessario()
+        {
+            CarregarTreePreservandoEstado();
         }
 
         private void CarregarTree()
@@ -62,6 +78,17 @@ namespace Anoteitor
 
             if (tvDestino.Nodes.Count > 0)
                 tvDestino.SelectedNode = tvDestino.Nodes[0];
+        }
+
+        private void CarregarTreePreservandoEstado()
+        {
+            SalvarSelecaoTree();
+            HashSet<string> expandidos = CapturarNosExpandidos();
+
+            CarregarTree();
+
+            RestaurarNosExpandidos(expandidos);
+            RestaurarSelecaoTree();
         }
 
         private void CarregarSubarvore(TreeNode noPai, string projeto, string pastaPai, List<string> caminhoAtual)
@@ -107,13 +134,13 @@ namespace Anoteitor
             PastaProjetoDestinoSelecionada = destino.PastaProjeto;
             CaminhoDestinoSelecionado = destino.CaminhoSubtarefas.ToList();
             DialogResult = DialogResult.OK;
-            Close();
+            Hide();
         }
 
         private void btnCancelar_Click(object sender, EventArgs e)
         {
             DialogResult = DialogResult.Cancel;
-            Close();
+            Hide();
         }
 
         private void btnCriarSubTarefa_Click(object sender, EventArgs e)
@@ -154,13 +181,28 @@ namespace Anoteitor
                     return;
                 }
 
+                SalvarSelecaoTree();
+                HashSet<string> expandidos = CapturarNosExpandidos();
                 Directory.CreateDirectory(novaPasta);
 
                 List<string> novoCaminho = destino.CaminhoSubtarefas.ToList();
                 novoCaminho.Add(nome);
 
+                _ultimoCaminhoSelecionadoTree = ChaveNo(destino.Projeto, novoCaminho);
                 CarregarTree();
+                RestaurarNosExpandidos(expandidos);
+                RestaurarSelecaoTree();
                 SelecionarNo(destino.Projeto, novoCaminho);
+            }
+        }
+
+        private void MoverHierarquia_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                Hide();
+                DialogResult = DialogResult.Cancel;
             }
         }
 
@@ -222,6 +264,95 @@ namespace Anoteitor
             }
 
             return null;
+        }
+
+        private void LimparSelecaoDestino()
+        {
+            ProjetoDestinoSelecionado = null;
+            PastaProjetoDestinoSelecionada = null;
+            CaminhoDestinoSelecionado = null;
+        }
+
+        private string ChaveNo(string projeto, IEnumerable<string> caminhoSubtarefas)
+        {
+            List<string> caminho = caminhoSubtarefas?.ToList() ?? new List<string>();
+            return projeto + "|" + string.Join("\\", caminho);
+        }
+
+        private string ChaveNo(TreeNode node)
+        {
+            NoDestinoMover info = node?.Tag as NoDestinoMover;
+            if (info == null)
+                return "";
+
+            return ChaveNo(info.Projeto, info.CaminhoSubtarefas);
+        }
+
+        private void SalvarSelecaoTree()
+        {
+            _ultimoCaminhoSelecionadoTree = ChaveNo(tvDestino.SelectedNode);
+        }
+
+        private void RestaurarSelecaoTree()
+        {
+            if (string.IsNullOrWhiteSpace(_ultimoCaminhoSelecionadoTree))
+                return;
+
+            TreeNode node = EncontrarNoPorChave(tvDestino.Nodes, _ultimoCaminhoSelecionadoTree);
+            if (node != null)
+            {
+                tvDestino.SelectedNode = node;
+                node.EnsureVisible();
+            }
+        }
+
+        private TreeNode EncontrarNoPorChave(TreeNodeCollection nodes, string chave)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (string.Equals(ChaveNo(node), chave, StringComparison.OrdinalIgnoreCase))
+                    return node;
+
+                TreeNode encontrado = EncontrarNoPorChave(node.Nodes, chave);
+                if (encontrado != null)
+                    return encontrado;
+            }
+
+            return null;
+        }
+
+        private HashSet<string> CapturarNosExpandidos()
+        {
+            HashSet<string> chaves = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            CapturarNosExpandidos(tvDestino.Nodes, chaves);
+            return chaves;
+        }
+
+        private void CapturarNosExpandidos(TreeNodeCollection nodes, HashSet<string> chaves)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (node.IsExpanded)
+                    chaves.Add(ChaveNo(node));
+
+                CapturarNosExpandidos(node.Nodes, chaves);
+            }
+        }
+
+        private void RestaurarNosExpandidos(HashSet<string> chaves)
+        {
+            RestaurarNosExpandidos(tvDestino.Nodes, chaves);
+        }
+
+        private void RestaurarNosExpandidos(TreeNodeCollection nodes, HashSet<string> chaves)
+        {
+            foreach (TreeNode node in nodes)
+            {
+                if (chaves != null && chaves.Contains(ChaveNo(node)))
+                    node.Expand();
+
+                RestaurarNosExpandidos(node.Nodes, chaves);
+            }
         }
     }
 }
