@@ -69,6 +69,7 @@ namespace Anoteitor
         private ToolStripMenuItem _itemContextoRenomear;
         private ToolStripMenuItem _itemContextoApagar;
         private ToolStripMenuItem _itemContextoMover;
+        private ToolStripMenuItem _itemContextoOrdem;
         private ToolStripMenuItem _itemContextoNova;
         private ToolStripMenuItem _itemContextoCriarSubTarefa;
         private ToolStripSeparator _separadorContextoHierarquia;
@@ -84,6 +85,11 @@ namespace Anoteitor
         private const float ComboFontMaxSize = 24f;
         private readonly Color _corComboNormal = SystemColors.Window;
         private readonly Color _corComboSelecionado = Color.LightYellow;
+        private class ItemOrdenado
+        {
+            public string Nome { get; set; }
+            public int? Ordem { get; set; }
+        }
 
         public string PastaGeral
         {
@@ -2239,6 +2245,289 @@ namespace Anoteitor
             AtualizarMenuSubAtividades();
         }
 
+        private string RemoverPrefixoOrdem(string texto)
+        {
+            if (string.IsNullOrWhiteSpace(texto))
+                return texto;
+
+            Match m = Regex.Match(texto, @"^\s*\d+\s*-\s*(.+)$");
+            if (m.Success)
+                return m.Groups[1].Value.Trim();
+
+            return texto.Trim();
+        }
+
+        private string SecaoOrdem(string projeto, IEnumerable<string> caminhoPai)
+        {
+            if (string.IsNullOrWhiteSpace(projeto))
+                projeto = this.Atual;
+
+            string caminho = caminhoPai == null
+                ? ""
+                : string.Join("\\", caminhoPai.Where(p =>
+                    !string.IsNullOrWhiteSpace(p) &&
+                    !string.Equals(p, "GERAL", StringComparison.OrdinalIgnoreCase)));
+
+            return "Ordem:" + projeto + ":" + caminho;
+        }
+
+        private string SecaoOrdemProjetos()
+        {
+            return "Ordem:Projetos";
+        }
+
+        private int? LerOrdemProjeto(string nomeProjeto)
+        {
+            string valor = cIni.ReadString(SecaoOrdemProjetos(), nomeProjeto, "");
+            int numero;
+            if (int.TryParse(valor, out numero) && numero > 0)
+                return numero;
+            return null;
+        }
+
+        private int? LerOrdemItem(string projeto, IEnumerable<string> caminhoPai, string nome)
+        {
+            string secao = SecaoOrdem(projeto, caminhoPai);
+            string valor = cIni.ReadString(secao, nome, "");
+
+            int numero;
+            if (int.TryParse(valor, out numero) && numero > 0)
+                return numero;
+
+            return null;
+        }
+
+        private string NomeExibicaoComOrdem(string projeto, IEnumerable<string> caminhoPai, string nome)
+        {
+            int? ordem = LerOrdemItem(projeto, caminhoPai, nome);
+            return ordem.HasValue ? ordem.Value.ToString() + " - " + nome : nome;
+        }
+
+        private string NomeExibicaoComOrdemProjeto(string nomeProjeto)
+        {
+            int? ordem = LerOrdemProjeto(nomeProjeto);
+            return ordem.HasValue ? ordem.Value.ToString() + " - " + nomeProjeto : nomeProjeto;
+        }
+
+        private List<string> OrdenarNomesPorOrdemDepoisAlfabetico(string projeto, IEnumerable<string> caminhoPai, IEnumerable<string> nomes)
+        {
+            return nomes
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => new ItemOrdenado
+                {
+                    Nome = n,
+                    Ordem = LerOrdemItem(projeto, caminhoPai, n)
+                })
+                .OrderBy(i => i.Ordem.HasValue ? 0 : 1)
+                .ThenBy(i => i.Ordem.HasValue ? i.Ordem.Value : int.MaxValue)
+                .ThenBy(i => i.Nome, StringComparer.CurrentCultureIgnoreCase)
+                .Select(i => NomeExibicaoComOrdem(projeto, caminhoPai, i.Nome))
+                .ToList();
+        }
+
+        private List<string> OrdenarProjetosPorOrdemDepoisAlfabetico(IEnumerable<string> nomes)
+        {
+            return nomes
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => new ItemOrdenado
+                {
+                    Nome = n,
+                    Ordem = LerOrdemProjeto(n)
+                })
+                .OrderBy(i => i.Ordem.HasValue ? 0 : 1)
+                .ThenBy(i => i.Ordem.HasValue ? i.Ordem.Value : int.MaxValue)
+                .ThenBy(i => i.Nome, StringComparer.CurrentCultureIgnoreCase)
+                .Select(i => NomeExibicaoComOrdemProjeto(i.Nome))
+                .ToList();
+        }
+
+        private int ProximaOrdemVaga(string projeto, IEnumerable<string> caminhoPai, IEnumerable<string> nomesNivel)
+        {
+            HashSet<int> usados = new HashSet<int>();
+
+            foreach (string nome in nomesNivel)
+            {
+                int? ordem = LerOrdemItem(projeto, caminhoPai, nome);
+                if (ordem.HasValue)
+                    usados.Add(ordem.Value);
+            }
+
+            int n = 1;
+            while (usados.Contains(n))
+                n++;
+
+            return n;
+        }
+
+        private int ProximaOrdemVagaProjetos(IEnumerable<string> nomes)
+        {
+            HashSet<int> usados = new HashSet<int>();
+
+            foreach (string nome in nomes)
+            {
+                int? ordem = LerOrdemProjeto(nome);
+                if (ordem.HasValue)
+                    usados.Add(ordem.Value);
+            }
+
+            int n = 1;
+            while (usados.Contains(n))
+                n++;
+
+            return n;
+        }
+
+        private int? SolicitarNumeroOrdem(string titulo, int numeroSugerido)
+        {
+            string valor = ShowInputDialog(titulo, "Informe o número de ordem:", numeroSugerido.ToString());
+
+            if (string.IsNullOrWhiteSpace(valor))
+                return null;
+
+            int numero;
+            if (!int.TryParse(valor.Trim(), out numero) || numero <= 0)
+            {
+                MessageBox.Show(
+                    "Informe um número inteiro maior que zero.",
+                    titulo,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return null;
+            }
+
+            return numero;
+        }
+
+        private void DefinirOrdemItem(
+            string projeto,
+            IEnumerable<string> caminhoPai,
+            string nomeItem,
+            int novaOrdem,
+            IEnumerable<string> nomesNivel)
+        {
+            string secao = SecaoOrdem(projeto, caminhoPai);
+
+            foreach (string nome in nomesNivel)
+            {
+                if (string.Equals(nome, nomeItem, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                int? ordem = LerOrdemItem(projeto, caminhoPai, nome);
+                if (ordem.HasValue && ordem.Value >= novaOrdem)
+                    cIni.WriteString(secao, nome, (ordem.Value + 1).ToString());
+            }
+
+            cIni.WriteString(secao, nomeItem, novaOrdem.ToString());
+        }
+
+        private void DefinirOrdemProjeto(string nomeProjeto)
+        {
+            List<string> nomesProjetos = ObterNomesProjetos();
+            int? ordemAtual = LerOrdemProjeto(nomeProjeto);
+            int numeroSugerido = ordemAtual ?? ProximaOrdemVagaProjetos(nomesProjetos);
+
+            int? novaOrdem = SolicitarNumeroOrdem("Ordem", numeroSugerido);
+            if (!novaOrdem.HasValue)
+                return;
+
+            DefinirOrdemProjeto(nomeProjeto, novaOrdem.Value, nomesProjetos);
+            PreencheCombo(this.Atual);
+        }
+
+        private void DefinirOrdemProjeto(string nomeProjeto, int novaOrdem, IEnumerable<string> nomesProjetos)
+        {
+            string secao = SecaoOrdemProjetos();
+
+            foreach (string nome in nomesProjetos)
+            {
+                if (string.Equals(nome, nomeProjeto, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                int? ordem = LerOrdemProjeto(nome);
+                if (ordem.HasValue && ordem.Value >= novaOrdem)
+                    cIni.WriteString(secao, nome, (ordem.Value + 1).ToString());
+            }
+
+            cIni.WriteString(secao, nomeProjeto, novaOrdem.ToString());
+        }
+
+        private void TransferirOrdemProjeto(string nomeAntigo, string nomeNovo)
+        {
+            string secao = SecaoOrdemProjetos();
+            string valor = cIni.ReadString(secao, nomeAntigo, "");
+            cIni.WriteString(secao, nomeAntigo, "");
+            if (!string.IsNullOrWhiteSpace(valor))
+                cIni.WriteString(secao, nomeNovo, valor);
+        }
+
+        private void LimparOrdemProjeto(string nomeProjeto)
+        {
+            cIni.WriteString(SecaoOrdemProjetos(), nomeProjeto, "");
+        }
+
+        private void DefinirOrdemSubtarefaPorNivel(int nivel, string nomeReal)
+        {
+            if (nivel < 0)
+                return;
+
+            List<string> caminhoPai = nivel == 0
+                ? new List<string>()
+                : _caminhoSubtarefas.Take(nivel).ToList();
+
+            string pastaPai = PastaDaSubtarefa(caminhoPai);
+            if (!Directory.Exists(pastaPai))
+                return;
+
+            List<string> nomesNivel = Directory.GetDirectories(pastaPai)
+                .Select(d => Path.GetFileName(d))
+                .Where(n => !string.Equals(n, "GERAL", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            int? ordemAtual = LerOrdemItem(this.Atual, caminhoPai, nomeReal);
+            int numeroSugerido = ordemAtual ?? ProximaOrdemVaga(this.Atual, caminhoPai, nomesNivel);
+
+            int? novaOrdem = SolicitarNumeroOrdem("Ordem", numeroSugerido);
+            if (!novaOrdem.HasValue)
+                return;
+
+            DefinirOrdemItem(this.Atual, caminhoPai, nomeReal, novaOrdem.Value, nomesNivel);
+
+            CarregarHierarquiaSubtarefas();
+            AtualizarEstadoCaminhoSubtarefas();
+            AtualizarMenuSubAtividades();
+        }
+
+        private void TransferirOrdemSubtarefa(string projeto, IEnumerable<string> caminhoPai, string nomeAntigo, string nomeNovo)
+        {
+            string secao = SecaoOrdem(projeto, caminhoPai);
+            string valor = cIni.ReadString(secao, nomeAntigo, "");
+            cIni.WriteString(secao, nomeAntigo, "");
+            if (!string.IsNullOrWhiteSpace(valor))
+                cIni.WriteString(secao, nomeNovo, valor);
+        }
+
+        private void LimparOrdemSubtarefa(string projeto, IEnumerable<string> caminhoPai, string nomeItem)
+        {
+            string secao = SecaoOrdem(projeto, caminhoPai);
+            cIni.WriteString(secao, nomeItem, "");
+        }
+
+        private List<string> ObterNomesProjetos()
+        {
+            List<string> nomes = new List<string>();
+            int qtd = cIni.ReadInt("Projetos", "Qtd", 0);
+
+            for (int i = 0; i < qtd; i++)
+            {
+                string nmProjeto = "Pro" + (i + 1).ToString();
+                string nome = cIni.ReadString("NmProjetos", nmProjeto, "");
+                if (!string.IsNullOrWhiteSpace(nome))
+                    nomes.Add(nome);
+            }
+
+            return nomes;
+        }
+
         private void LimparCombosSubtarefas()
         {
             foreach (ToolStripComboBox combo in _combosSubtarefas.ToList())
@@ -2271,34 +2560,17 @@ namespace Anoteitor
         private void PreencheCombo(string Atual)
         {
             cbProjetos.Items.Clear();
-            int Qtd = this.cIni.ReadInt("Projetos", "Qtd", 0);
-            for (int i = 0; i < Qtd; i++)
+            List<string> nomesProjetos = OrdenarProjetosPorOrdemDepoisAlfabetico(ObterNomesProjetos());
+            for (int i = 0; i < nomesProjetos.Count; i++)
             {
-                string nmProjeto = "Pro" + (i + 1).ToString();
-                string Nome = this.cIni.ReadString("NmProjetos", nmProjeto, "");
+                string Nome = nomesProjetos[i];
                 if (Nome.Length > 0)
                 {
                     cbProjetos.Items.Add(Nome);
-                    if (Nome == Atual)
-                    {
-                        try
-                        {
-                            cbProjetos.SelectedIndex = i;
-                        }
-                        catch (Exception)
-                        {
-                            try
-                            {
-                                cbProjetos.SelectedIndex = i - 1;
-                            }
-                            catch (Exception)
-                            {
-                                cbProjetos.SelectedIndex = i - 2;
-                            }
-                        }
-                    }
                 }
             }
+
+            SelecionarItemPorNomeReal(cbProjetos, Atual);
         }
 
         private void VeSeTemSub(string EssaAtivi)
@@ -2332,6 +2604,7 @@ namespace Anoteitor
             _itemContextoRenomear = new ToolStripMenuItem("Renomear");
             _itemContextoApagar = new ToolStripMenuItem("Apagar");
             _itemContextoMover = new ToolStripMenuItem("Mover");
+            _itemContextoOrdem = new ToolStripMenuItem("Ordem");
             _itemContextoCriarSubTarefa = new ToolStripMenuItem("Criar Sub Tarefa");
             _separadorContextoHierarquia = new ToolStripSeparator();
 
@@ -2339,12 +2612,14 @@ namespace Anoteitor
             _itemContextoRenomear.Click += (s, e) => RenomearHierarquiaContexto();
             _itemContextoApagar.Click += (s, e) => ApagarHierarquiaContexto();
             _itemContextoMover.Click += (s, e) => MoverHierarquiaContexto();
+            _itemContextoOrdem.Click += (s, e) => OrdemHierarquiaContexto();
             _itemContextoCriarSubTarefa.Click += (s, e) => CriarSubTarefaHierarquiaContexto();
 
             _menuContextoHierarquia.Items.Add(_itemContextoNova);
             _menuContextoHierarquia.Items.Add(_itemContextoRenomear);
             _menuContextoHierarquia.Items.Add(_itemContextoApagar);
             _menuContextoHierarquia.Items.Add(_itemContextoMover);
+            _menuContextoHierarquia.Items.Add(_itemContextoOrdem);
             _menuContextoHierarquia.Items.Add(new ToolStripSeparator());
             _menuContextoHierarquia.Items.Add(_itemContextoCriarSubTarefa);
         }
@@ -2355,6 +2630,7 @@ namespace Anoteitor
             _itemContextoRenomear.Visible = true;
             _itemContextoApagar.Visible = true;
             _itemContextoMover.Visible = true;
+            _itemContextoOrdem.Visible = true;
             _itemContextoCriarSubTarefa.Visible = true;
         }
 
@@ -2451,6 +2727,34 @@ namespace Anoteitor
             CriarSubtarefaAbaixoDoCaminho(caminhoPai);
         }
 
+        private void OrdemHierarquiaContexto()
+        {
+            string texto = Convert.ToString(_comboContextoHierarquia?.SelectedItem);
+            if (string.IsNullOrWhiteSpace(texto))
+                texto = _comboContextoHierarquia?.Text;
+
+            string nomeReal = RemoverPrefixoOrdem(texto);
+
+            if (string.IsNullOrWhiteSpace(nomeReal) ||
+                string.Equals(nomeReal, "GERAL", StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(
+                    "Não é possível definir ordem para GERAL.",
+                    "Ordem",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            if (_nivelContextoHierarquia < 0)
+            {
+                DefinirOrdemProjeto(nomeReal);
+                return;
+            }
+
+            DefinirOrdemSubtarefaPorNivel(_nivelContextoHierarquia, nomeReal);
+        }
+
         private void MoverHierarquiaContexto()
         {
             if (_nivelContextoHierarquia < 0)
@@ -2545,6 +2849,7 @@ namespace Anoteitor
             caminhoNovo.Add(nomeMovido);
 
             string pastaDestino = PastaDaSubtarefa(pastaProjetoDestino, caminhoNovo);
+            LimparOrdemSubtarefa(projetoOrigem, caminhoOrigem.Take(caminhoOrigem.Count - 1).ToList(), nomeMovido);
 
             if (!Directory.Exists(pastaOrigem))
             {
@@ -2821,10 +3126,12 @@ namespace Anoteitor
                 {
                     int indice = comboAtual.FindStringExact(partes[nivel]);
                     if (indice < 0)
+                        indice = FindIndexByRealName(comboAtual, partes[nivel]);
+                    if (indice < 0)
                         break;
 
                     comboAtual.SelectedIndex = indice;
-                    _caminhoSubtarefas.Add(partes[nivel]);
+                    _caminhoSubtarefas.Add(RemoverPrefixoOrdem(partes[nivel]));
 
                     string pastaAtual = PastaDaSubtarefaAtual();
                     if (!TemSubpastas(pastaAtual))
@@ -2835,7 +3142,7 @@ namespace Anoteitor
                 }
 
                 if (_caminhoSubtarefas.Count == 0 && cbSubprojeto.Items.Count > 0)
-                    cbSubprojeto.SelectedIndex = cbSubprojeto.FindStringExact("GERAL");
+                    cbSubprojeto.SelectedIndex = FindIndexByRealName(cbSubprojeto, "GERAL");
 
                 AtualizarEstadoCaminhoSubtarefas();
                 AtualizarMenuSubAtividades();
@@ -2869,7 +3176,11 @@ namespace Anoteitor
                 }
             }
 
-            foreach (string nome in nomes)
+            string projeto = this.Atual;
+            List<string> caminhoPai = primeiroNivel ? new List<string>() : _caminhoSubtarefas.Take(Math.Max(0, _combosSubtarefas.IndexOf(combo))).ToList();
+            List<string> ordenados = OrdenarNomesPorOrdemDepoisAlfabetico(projeto, caminhoPai, nomes);
+
+            foreach (string nome in ordenados)
                 AdicionarItemUnico(combo.Items, nome);
 
             combo.Visible = combo.Items.Count > 1;
@@ -2887,6 +3198,28 @@ namespace Anoteitor
             }
 
             items.Add(valor);
+        }
+
+        private int FindIndexByRealName(ToolStripComboBox combo, string nomeReal)
+        {
+            if (combo == null || string.IsNullOrWhiteSpace(nomeReal))
+                return -1;
+
+            for (int i = 0; i < combo.Items.Count; i++)
+            {
+                string itemReal = RemoverPrefixoOrdem(Convert.ToString(combo.Items[i]));
+                if (string.Equals(itemReal, nomeReal, StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+
+            return -1;
+        }
+
+        private void SelecionarItemPorNomeReal(ToolStripComboBox combo, string nomeReal)
+        {
+            int indice = FindIndexByRealName(combo, nomeReal);
+            if (indice >= 0)
+                combo.SelectedIndex = indice;
         }
 
         private ToolStripComboBox CriarComboSubtarefaDinamico()
@@ -3010,14 +3343,15 @@ namespace Anoteitor
 
             foreach (string parte in caminho.Split(new[] { '\\', '/', '|' }, StringSplitOptions.RemoveEmptyEntries))
             {
-                if (parte == "GERAL")
+                string parteReal = RemoverPrefixoOrdem(parte);
+                if (parteReal == "GERAL")
                     continue;
 
-                string pastaFilha = Path.Combine(pastaAtual, parte);
+                string pastaFilha = Path.Combine(pastaAtual, parteReal);
                 if (!Directory.Exists(pastaFilha))
                     break;
 
-                _caminhoSubtarefas.Add(parte);
+                _caminhoSubtarefas.Add(parteReal);
                 pastaAtual = pastaFilha;
             }
             this._SUbAtual = CaminhoSubtarefasAtual();
@@ -3136,6 +3470,7 @@ namespace Anoteitor
             caminhoAtualCompleto[nivel] = nomeNovo;
             string prefixoNovo = NomeBaseAnotacao(caminhoAtualCompleto);
             RenomearArquivosDaHierarquia(pastaNova, prefixoAntigo, prefixoNovo);
+            TransferirOrdemSubtarefa(this.Atual, caminhoPai, nomeAntigo, nomeNovo);
             cIni.WriteString(this.Atual, "CaminhoAtual", CaminhoSubtarefasAtual(caminhoAtualCompleto));
             _caminhoSubtarefas.Clear();
             _caminhoSubtarefas.AddRange(caminhoAtualCompleto);
@@ -3162,6 +3497,7 @@ namespace Anoteitor
             List<string> caminhoPai = caminhoAtual.Take(caminhoAtual.Count - 1).ToList();
             string pasta = PastaDaSubtarefa(caminhoAtual);
             Directory.Delete(pasta, true);
+            LimparOrdemSubtarefa(this.Atual, caminhoPai, nome);
 
             _caminhoSubtarefas.Clear();
             _caminhoSubtarefas.AddRange(caminhoPai);
@@ -3234,6 +3570,7 @@ namespace Anoteitor
 
         private string NormalizarSubprojeto(string subprojeto)
         {
+            subprojeto = RemoverPrefixoOrdem(subprojeto);
             return string.IsNullOrWhiteSpace(subprojeto) || subprojeto == "GERAL"
                 ? ""
                 : subprojeto;
@@ -3356,14 +3693,16 @@ namespace Anoteitor
 
         private void AplicarSelecaoProjeto(string projeto)
         {
+            projeto = RemoverPrefixoOrdem(projeto);
             if (string.IsNullOrWhiteSpace(projeto))
                 return;
 
             this.Atual = projeto;
-            this.cbProjetos.Text = projeto;
             cIni.WriteString("Projetos", "Atual", projeto);
             this.CarregaArquivoDoProjeto(true);
             this.MostraArquivosDoProjeto();
+            SelecionarItemPorNomeReal(cbProjetos, projeto);
+            this.cbProjetos.Text = cbProjetos.SelectedItem != null ? cbProjetos.SelectedItem.ToString() : NomeExibicaoComOrdemProjeto(projeto);
             this.AtualAnt = this.Atual;
             this.VeSeTemSub(projeto);
         }
@@ -3398,13 +3737,14 @@ namespace Anoteitor
         private void cbProjetos_DropDownClosed(object sender, EventArgs e)
         {
             Console.WriteLine("cbProjetos_DropDownClosed");
-            if (string.Equals(this.Atual, cbProjetos.Text, StringComparison.OrdinalIgnoreCase))
+            string projetoSelecionado = RemoverPrefixoOrdem(cbProjetos.Text);
+            if (string.Equals(this.Atual, projetoSelecionado, StringComparison.OrdinalIgnoreCase))
                 return;
 
             _suppressNavigationHistory = true;
             try
             {
-                AplicarSelecaoProjeto(cbProjetos.Text);
+                AplicarSelecaoProjeto(projetoSelecionado);
             }
             finally
             {
@@ -3871,13 +4211,14 @@ namespace Anoteitor
             Console.WriteLine("cbProjetos_KeyUp");
             if ((e.KeyCode == Keys.Down) || (e.KeyCode == Keys.Up))
             {
-                if (string.Equals(this.Atual, cbProjetos.Text, StringComparison.OrdinalIgnoreCase))
+                string projetoSelecionado = RemoverPrefixoOrdem(cbProjetos.Text);
+                if (string.Equals(this.Atual, projetoSelecionado, StringComparison.OrdinalIgnoreCase))
                     return;
 
                 _suppressNavigationHistory = true;
                 try
                 {
-                    AplicarSelecaoProjeto(cbProjetos.Text);
+                    AplicarSelecaoProjeto(projetoSelecionado);
                 }
                 finally
                 {
@@ -3999,12 +4340,9 @@ namespace Anoteitor
             if (DtHoje == sCriacaoSub)
             {
                 UltAdic = NomeAtiv;
-                cbProjetos.Items.Add(NomeAtiv);
-                if (NomeAtiv == Atual)
-                {
-                    cbProjetos.SelectedIndex = a;
+                cbProjetos.Items.Add(NomeExibicaoComOrdemProjeto(NomeAtiv));
+                if (string.Equals(NomeAtiv, Atual, StringComparison.OrdinalIgnoreCase))
                     ret = true;
-                }
                 a++;
             }
             return ret;
@@ -4048,6 +4386,7 @@ namespace Anoteitor
                 return;
 
             this.Loga("Carregado=" + this.Carregado + ", Nivel=" + nivel + ", Text=" + combo.Text);
+            string nomeReal = RemoverPrefixoOrdem(combo.Text);
 
             if (this.Carregado && this.IsDirty)
                 this.Save();
@@ -4059,17 +4398,17 @@ namespace Anoteitor
                 while (_caminhoSubtarefas.Count > nivel)
                     _caminhoSubtarefas.RemoveAt(_caminhoSubtarefas.Count - 1);
 
-                if (!string.IsNullOrWhiteSpace(combo.Text) && combo.Text != "GERAL")
-                    _caminhoSubtarefas.Add(combo.Text);
+                if (!string.IsNullOrWhiteSpace(nomeReal) && !string.Equals(nomeReal, "GERAL", StringComparison.OrdinalIgnoreCase))
+                    _caminhoSubtarefas.Add(nomeReal);
 
                 RemoverCombosSubtarefasDepoisDoNivel(nivel);
 
                 string pastaAtual = PastaDaSubtarefaAtual();
-                if (combo.Text != "GERAL" && TemSubpastas(pastaAtual))
+                if (!string.Equals(nomeReal, "GERAL", StringComparison.OrdinalIgnoreCase) && TemSubpastas(pastaAtual))
                 {
                     ToolStripComboBox proximo = CriarComboSubtarefaDinamico();
                     PopularComboSubtarefa(proximo, pastaAtual, false);
-                    proximo.SelectedIndex = proximo.FindStringExact("GERAL");
+                    proximo.SelectedIndex = FindIndexByRealName(proximo, "GERAL");
                 }
 
                 AtualizarEstadoCaminhoSubtarefas();
@@ -4119,11 +4458,14 @@ namespace Anoteitor
                 {
                     string nmProjeto = "Pro" + Nr.ToString();
                     this.cIni.WriteString("NmProjetos", nmProjeto, NomeAtividade);
+                    LimparOrdemProjeto(this.Atual);
+                    TransferirOrdemProjeto(this.Atual, NomeAtividade);
                 }
                 PreencheCombo(NomeAtividade);
                 this.Filename = this.Filename.Replace(this.Atual, NomeAtividade);
                 this.Save();
-                cbProjetos.Text = NomeAtividade;
+                SelecionarItemPorNomeReal(cbProjetos, NomeAtividade);
+                cbProjetos.Text = cbProjetos.SelectedItem != null ? cbProjetos.SelectedItem.ToString() : NomeExibicaoComOrdemProjeto(NomeAtividade);
                 cIni.WriteString("Projetos", "Atual", NomeAtividade);
                 controlContentTextBox.Text = Texto;
                 this.Cursor = Cursors.Default;
@@ -4144,10 +4486,12 @@ namespace Anoteitor
             if (frmMensagem.DialogResult == DialogResult.OK)
             {
                 toolStripStatusLabel1.Text = "Tarefa " + this.Atual + " foi apagada";
+                LimparOrdemProjeto(this.Atual);
                 cbProjetos.SelectedIndex = 0;
-                this.Atual = cbProjetos.Text;
+                this.Atual = RemoverPrefixoOrdem(cbProjetos.Text);
                 PreencheCombo(this.Atual);
-                cIni.WriteString("Projetos", "Atual", cbProjetos.Text);
+                SelecionarItemPorNomeReal(cbProjetos, this.Atual);
+                cIni.WriteString("Projetos", "Atual", this.Atual);
                 this.CarregaArquivoDoProjeto(true);
                 this.MostraArquivosDoProjeto();
             }
@@ -4351,6 +4695,46 @@ namespace Anoteitor
             form.Text = title;
             label.Text = promptText;
             textBox.Text = "";
+
+            buttonOk.Text = "OK";
+            buttonCancel.Text = "Cancelar";
+            buttonOk.DialogResult = DialogResult.OK;
+            buttonCancel.DialogResult = DialogResult.Cancel;
+
+            label.SetBounds(9, 20, 372, 13);
+            textBox.SetBounds(12, 36, 372, 20);
+            buttonOk.SetBounds(228, 72, 75, 23);
+            buttonCancel.SetBounds(309, 72, 75, 23);
+
+            label.AutoSize = true;
+            textBox.Anchor = textBox.Anchor | AnchorStyles.Right;
+            buttonOk.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+            buttonCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+
+            form.ClientSize = new System.Drawing.Size(396, 107);
+            form.Controls.AddRange(new Control[] { label, textBox, buttonOk, buttonCancel });
+            form.FormBorderStyle = FormBorderStyle.FixedDialog;
+            form.StartPosition = FormStartPosition.CenterScreen;
+            form.MinimizeBox = false;
+            form.MaximizeBox = false;
+            form.AcceptButton = buttonOk;
+            form.CancelButton = buttonCancel;
+
+            DialogResult dialogResult = form.ShowDialog();
+            return dialogResult == DialogResult.OK ? textBox.Text : "";
+        }
+
+        private string ShowInputDialog(string title, string promptText, string defaultValue)
+        {
+            Form form = new Form();
+            Label label = new Label();
+            TextBox textBox = new TextBox();
+            Button buttonOk = new Button();
+            Button buttonCancel = new Button();
+
+            form.Text = title;
+            label.Text = promptText;
+            textBox.Text = defaultValue ?? "";
 
             buttonOk.Text = "OK";
             buttonCancel.Text = "Cancelar";
