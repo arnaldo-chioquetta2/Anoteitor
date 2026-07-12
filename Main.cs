@@ -3642,13 +3642,13 @@ namespace Anoteitor
 
         private void AtualizarBotoesHistorico()
         {
-            this.btnHistoricoVoltar.Enabled = _navigationHistoryIndex > 0;
-            this.btnHistoricoAvancar.Enabled = _navigationHistoryIndex >= 0 && _navigationHistoryIndex < _navigationHistory.Count - 1;
+            this.btnHistoricoVoltar.Enabled = EncontrarIndiceHistoricoEditado(-1) >= 0;
+            this.btnHistoricoAvancar.Enabled = EncontrarIndiceHistoricoEditado(1) >= 0;
         }
 
         private void NavegarPeloHistorico(int deslocamento)
         {
-            int novoIndice = _navigationHistoryIndex + deslocamento;
+            int novoIndice = EncontrarIndiceHistoricoEditado(deslocamento);
             if (novoIndice < 0 || novoIndice >= _navigationHistory.Count)
                 return;
 
@@ -3689,6 +3689,88 @@ namespace Anoteitor
 
             if (!string.Equals(NormalizarDataNavegacao(this.cbArquivos.Text), dataDestino, StringComparison.OrdinalIgnoreCase))
                 AplicarSelecaoData(dataDestino);
+        }
+
+        private int EncontrarIndiceHistoricoEditado(int deslocamento)
+        {
+            if (_navigationHistory.Count == 0)
+                return -1;
+
+            int indice = _navigationHistoryIndex;
+
+            while (true)
+            {
+                indice += deslocamento;
+                if (indice < 0 || indice >= _navigationHistory.Count)
+                    return -1;
+
+                if (ItemNavegacaoEhEditado(_navigationHistory[indice]))
+                    return indice;
+            }
+        }
+
+        private bool ItemNavegacaoEhEditado(NavigationEntry entrada)
+        {
+            string arquivo = ResolverArquivoDaNavegacao(entrada);
+            if (string.IsNullOrWhiteSpace(arquivo))
+                return false;
+
+            if (ArquivoEhSnapshotHistorico(arquivo))
+                return false;
+
+            return ArquivoTemConteudoReal(arquivo) && ArquivoFoiModificadoHoje(arquivo);
+        }
+
+        private string ResolverArquivoDaNavegacao(NavigationEntry entrada)
+        {
+            if (entrada == null || string.IsNullOrWhiteSpace(entrada.Projeto))
+                return "";
+
+            string projeto = RemoverPrefixoOrdem(entrada.Projeto);
+            string dataNormalizada = NormalizarDataNavegacao(entrada.Data).Replace("/", "-");
+            List<string> caminhoSub = CaminhoSubprojetoParaLista(entrada.Subprojeto);
+            string pastaProjeto = Path.Combine(this.PastaGeral, projeto);
+            string pasta = PastaDaSubtarefa(pastaProjeto, caminhoSub);
+            string nomeBase = NomeBaseAnotacao(projeto, caminhoSub);
+            string workingCopy = Path.Combine(pasta, nomeBase + ".txt");
+            string workingCopyAntigo = Path.Combine(pasta, nomeBase + "^current.txt");
+            string arquivoData = Path.Combine(pasta, nomeBase + "^" + dataNormalizada + ".txt");
+
+            if (string.Equals(dataNormalizada, Fun.Agora().ToString("dd-MM-yyyy"), StringComparison.OrdinalIgnoreCase))
+            {
+                if (File.Exists(workingCopy))
+                    return workingCopy;
+
+                if (File.Exists(workingCopyAntigo))
+                    return workingCopyAntigo;
+            }
+
+            return File.Exists(arquivoData) ? arquivoData : arquivoData;
+        }
+
+        private List<string> CaminhoSubprojetoParaLista(string subprojeto)
+        {
+            if (string.IsNullOrWhiteSpace(subprojeto))
+                return new List<string>();
+
+            return subprojeto
+                .Split(new[] { '\\', '/', '|' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(RemoverPrefixoOrdem)
+                .Where(p => !string.IsNullOrWhiteSpace(p) &&
+                            !string.Equals(p, "GERAL", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        private bool ArquivoTemConteudoReal(string caminhoArquivo)
+        {
+            if (string.IsNullOrWhiteSpace(caminhoArquivo))
+                return false;
+
+            if (!File.Exists(caminhoArquivo))
+                return false;
+
+            string texto = File.ReadAllText(caminhoArquivo, Encoding.UTF8);
+            return !string.IsNullOrWhiteSpace(texto);
         }
 
         private void AplicarSelecaoProjeto(string projeto)
