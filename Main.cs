@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Drawing.Printing;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
 
 
 namespace Anoteitor
@@ -78,6 +79,9 @@ namespace Anoteitor
         private bool _isApplyingNavigationHistory = false;
         private bool _suppressNavigationHistory = false;
         private bool _atualizandoCombosSubtarefas = false;
+        private bool _carregandoArquivo;
+        private const int EM_GETFIRSTVISIBLELINE = 0x00CE;
+        private const int EM_LINESCROLL = 0x00B6;
         private const string EditorFontDefaultFamily = "Lucida Console";
         private const float EditorFontDefaultSize = 9.75f;
         private const float ComboFontDefaultSize = 8.25f;
@@ -591,6 +595,7 @@ namespace Anoteitor
 
         private void Main_FormClosing(object sender, FormClosingEventArgs e)
         {
+            SalvarPosicaoEditorAtual();
             e.Cancel = !EnsureWorkNotLost();
             if (e.Cancel == false)
             {
@@ -902,37 +907,175 @@ namespace Anoteitor
             return true;
         }
 
+        private string ChavePosicaoEditor()
+        {
+            string arquivo = Filename;
+            if (string.IsNullOrWhiteSpace(arquivo))
+                return "";
+
+            try
+            {
+                arquivo = Path.GetFullPath(arquivo);
+            }
+            catch
+            {
+                return "";
+            }
+
+            return arquivo.Replace("\\", "|").Replace("/", "|").Replace(":", "");
+        }
+
+        private int LerIntIni(string secao, string chave, int padrao)
+        {
+            int valor;
+            return int.TryParse(cIni.ReadString(secao, chave, padrao.ToString()), out valor)
+                ? valor
+                : padrao;
+        }
+
+        private int ObterPrimeiraLinhaVisivelEditor()
+        {
+            if (controlContentTextBox == null || controlContentTextBox.IsDisposed)
+                return 0;
+
+            if (!controlContentTextBox.IsHandleCreated)
+                return 0;
+
+            return SendMessage(controlContentTextBox.Handle, EM_GETFIRSTVISIBLELINE, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        private void RestaurarPrimeiraLinhaVisivelEditor(int linhaDesejada)
+        {
+            if (controlContentTextBox == null || controlContentTextBox.IsDisposed ||
+                !controlContentTextBox.IsHandleCreated)
+                return;
+
+            int linhaAtual = ObterPrimeiraLinhaVisivelEditor();
+            int delta = Math.Max(0, linhaDesejada) - linhaAtual;
+            if (delta != 0)
+                SendMessage(controlContentTextBox.Handle, EM_LINESCROLL, IntPtr.Zero, new IntPtr(delta));
+        }
+
+        private bool SelecaoEstaVisivelNoEditor(int selectionStart)
+        {
+            if (controlContentTextBox == null || controlContentTextBox.IsDisposed ||
+                !controlContentTextBox.IsHandleCreated || controlContentTextBox.TextLength == 0)
+                return true;
+
+            int linhaSelecao = controlContentTextBox.GetLineFromCharIndex(
+                Math.Min(Math.Max(0, selectionStart), controlContentTextBox.TextLength));
+            int primeiraLinha = ObterPrimeiraLinhaVisivelEditor();
+            int alturaFonte = Math.Max(1, controlContentTextBox.Font.Height);
+            int linhasVisiveis = Math.Max(1, controlContentTextBox.ClientSize.Height / alturaFonte);
+            int ultimaLinha = primeiraLinha + linhasVisiveis - 1;
+
+            return linhaSelecao >= primeiraLinha && linhaSelecao <= ultimaLinha;
+        }
+
+        private void GarantirSelecaoVisivelNoEditor(int selectionStart, int selectionLength)
+        {
+            if (controlContentTextBox == null || controlContentTextBox.IsDisposed ||
+                controlContentTextBox.TextLength == 0 || SelecaoEstaVisivelNoEditor(selectionStart))
+                return;
+
+            controlContentTextBox.Select(selectionStart, selectionLength);
+            controlContentTextBox.ScrollToCaret();
+            controlContentTextBox.Select(selectionStart, selectionLength);
+        }
+
+        private void AgendarRestauracaoPosicaoEditor()
+        {
+            if (IsDisposed || !IsHandleCreated)
+            {
+                RestaurarPosicaoEditorAtual();
+                return;
+            }
+
+            BeginInvoke(new Action(() => RestaurarPosicaoEditorAtual()));
+        }
+
+        private void SalvarPosicaoEditorAtual()
+        {
+            if (_carregandoArquivo || controlContentTextBox == null || controlContentTextBox.IsDisposed)
+                return;
+
+            string chave = ChavePosicaoEditor();
+            if (string.IsNullOrWhiteSpace(chave) || cIni == null)
+                return;
+
+            cIni.WriteString("PosicaoEditor", chave + ".SelectionStart", controlContentTextBox.SelectionStart.ToString());
+            cIni.WriteString("PosicaoEditor", chave + ".SelectionLength", controlContentTextBox.SelectionLength.ToString());
+            cIni.WriteString("PosicaoEditor", chave + ".FirstVisibleLine", ObterPrimeiraLinhaVisivelEditor().ToString());
+        }
+
+        private void RestaurarPosicaoEditorAtual()
+        {
+            string chave = ChavePosicaoEditor();
+            if (string.IsNullOrWhiteSpace(chave) || cIni == null ||
+                controlContentTextBox == null || controlContentTextBox.IsDisposed)
+                return;
+
+            int selectionStart = Math.Max(0, LerIntIni("PosicaoEditor", chave + ".SelectionStart", 0));
+            int selectionLength = Math.Max(0, LerIntIni("PosicaoEditor", chave + ".SelectionLength", 0));
+            int firstVisibleLine = Math.Max(0, LerIntIni("PosicaoEditor", chave + ".FirstVisibleLine", 0));
+
+            selectionStart = Math.Min(selectionStart, controlContentTextBox.TextLength);
+            selectionLength = Math.Min(selectionLength, controlContentTextBox.TextLength - selectionStart);
+
+            controlContentTextBox.Select(selectionStart, selectionLength);
+            RestaurarPrimeiraLinhaVisivelEditor(firstVisibleLine);
+            // O ajuste do scroll pode reposicionar o caret; reaplicar a seleção
+            // garante que o trecho permaneça selecionado ao final da abertura.
+            controlContentTextBox.Select(selectionStart, selectionLength);
+            GarantirSelecaoVisivelNoEditor(selectionStart, selectionLength);
+        }
+
+        [DllImport("user32.dll")]
+        private static extern int SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
         // ✅ MÉTODO 1: Orquestrador principal (28 linhas)
         public void Open(string pFilename, string searchText = null, Encoding encoding = null, bool ativar = false)
         {
             this.Loga($"[v2.13] Open: {pFilename}");
             Console.WriteLine($"Abrindo {pFilename}");
+            SalvarPosicaoEditorAtual();
             this._arquivoOrigemConteudoHistorico = "";
+            _carregandoArquivo = true;
 
-            // ✅ Passo 1: Determinar arquivo correto (working copy ou migração)
-            string arquivoFinal = DeterminarArquivoCorreto(pFilename);
+            try
+            {
+                // ✅ Passo 1: Determinar arquivo correto (working copy ou migração)
+                string arquivoFinal = DeterminarArquivoCorreto(pFilename);
 
-            // ✅ Passo 2: Criar arquivo se não existir
-            if (!File.Exists(arquivoFinal))
-                arquivoFinal = CriarArquivoNovo(arquivoFinal);
+                // ✅ Passo 2: Criar arquivo se não existir
+                if (!File.Exists(arquivoFinal))
+                    arquivoFinal = CriarArquivoNovo(arquivoFinal);
 
-            // ✅ Passo 3: Ler conteúdo do arquivo
-            LerConteudoArquivo(arquivoFinal, encoding);
+                // ✅ Passo 3: Ler conteúdo do arquivo
+                LerConteudoArquivo(arquivoFinal, encoding);
 
-            // ✅ Passo 4: Tratar arquivo vazio (carregar histórico se necessário)
-            if (Content.Length == 0)
-                TratarArquivoVazio(arquivoFinal);
+                // ✅ Passo 4: Tratar arquivo vazio (carregar histórico se necessário)
+                if (Content.Length == 0)
+                    TratarArquivoVazio(arquivoFinal);
 
-            // ✅ Passo 5: Aplicar busca de texto (se fornecida)
-            if (!string.IsNullOrEmpty(searchText))
-                AplicarBuscaTexto(searchText, ativar);
-            else
-                SelectionStart = 0;
+                // ✅ Passo 5: Aplicar busca de texto (se fornecida)
+                if (!string.IsNullOrEmpty(searchText))
+                    AplicarBuscaTexto(searchText, ativar);
+                else
+                    SelectionStart = 0;
 
-            // ✅ Passo 6: Finalizar abertura
-            FinalizarAbertura(arquivoFinal);
+                // ✅ Passo 6: Finalizar abertura
+                FinalizarAbertura(arquivoFinal);
 
-            this.Loga($"Open finalizado - Filename={this.Filename}, Carregado={this.Carregado}, Tamanho={Content.Length}");
+                if (string.IsNullOrEmpty(searchText))
+                    AgendarRestauracaoPosicaoEditor();
+
+                this.Loga($"Open finalizado - Filename={this.Filename}, Carregado={this.Carregado}, Tamanho={Content.Length}");
+            }
+            finally
+            {
+                _carregandoArquivo = false;
+            }
         }
 
         // ✅ MÉTODO 7: Finalizar abertura do arquivo (15 linhas)
@@ -3513,6 +3656,7 @@ namespace Anoteitor
 
             if (nova)
             {
+                SalvarPosicaoEditorAtual();
                 string arquivoNovo = NomeDoArquivo(data, true);
                 string pasta = Path.GetDirectoryName(arquivoNovo);
                 if (!Directory.Exists(pasta))
@@ -3528,8 +3672,7 @@ namespace Anoteitor
             }
             else
             {
-                this.Filename = NomeDoArquivo(data);
-                this.Open(this.Filename);
+                this.Open(NomeDoArquivo(data));
             }
 
             this.Text = this.TitAplicativo + " " + Path.GetFileName(this.Filename);
@@ -3561,9 +3704,9 @@ namespace Anoteitor
             controlContentTextBox.Clear();
             CarregarCaminhoSubtarefasPersistido();
             string Data = Fun.Agora().ToShortDateString().Replace(@"/", "-");
-            this.Filename = NomeDoArquivo(Data);
-            this.Loga("Abrindo arquivo: " + this.Filename);
-            this.Open(this.Filename);
+            string arquivo = NomeDoArquivo(Data);
+            this.Loga("Abrindo arquivo: " + arquivo);
+            this.Open(arquivo);
             this.Text = this.TitAplicativo + " " + Path.GetFileName(this.Filename);
             this.Loga("CarregaArquivoDoProjeto finalizado - Carregado=" + this.Carregado);
         }
@@ -4254,6 +4397,8 @@ namespace Anoteitor
 
             try
             {
+                SalvarPosicaoEditorAtual();
+
                 // ✅ Ler conteúdo DIRETAMENTE do arquivo especificado (sem lógica de working copy)
                 string content = ReadAllText(filePath, null);
                 Content = content;
@@ -4268,6 +4413,7 @@ namespace Anoteitor
                 controlContentTextBox.BackColor = Color.AliceBlue;
 
                 this.MotraCaracteres();
+                AgendarRestauracaoPosicaoEditor();
                 this.Loga($"✅ Conteúdo histórico carregado ({Content.Length} caracteres)");
             }
             catch (Exception ex)
